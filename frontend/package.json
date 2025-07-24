@@ -1,0 +1,15 @@
+{
+  "name": "transcendence-frontend",
+  "version": "1.0.0",
+  "description": "Pong Tournament Website Frontend",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc src/app.ts --outDir dist --target ES2020 --lib ES2020,DOM && cp src/index.html dist/ && (cp -r assets dist/ 2>/dev/null || true)",
+    "dev": "tsc --watch",
+    "clean": "rm -rf dist"
+  },
+  "devDependencies": {},
+  "dependencies": {
+    "typescript": "^5.0.0"
+  }
+}

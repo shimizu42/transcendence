@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pong Tournament Test</title>
+    <style>
+        body { 
+            font-family: 'Courier New', monospace; 
+            background: #000; 
+            color: #fff; 
+            padding: 20px;
+        }
+        button { 
+            background: #fff; 
+            color: #000; 
+            border: none; 
+            padding: 15px 30px; 
+            font-size: 1.2em; 
+            cursor: pointer; 
+            margin: 10px; 
+        }
+        #status { 
+            background: #333; 
+            padding: 20px; 
+            margin: 20px 0; 
+            border-radius: 5px; 
+        }
+    </style>
+</head>
+<body>
+    <h1>PONG TOURNAMENT TEST</h1>
+    <button onclick="testFunctions()">Test Functions</button>
+    <button onclick="testShowScreen()">Test Start Tournament</button>
+    <div id="status">Status: Loading...</div>
+
+    <script>
+        // Test if functions exist
+        function testFunctions() {
+            const status = document.getElementById('status');
+            if (typeof showScreen === 'function') {
+                status.innerHTML = 'SUCCESS: showScreen function exists';
+            } else {
+                status.innerHTML = 'ERROR: showScreen function not found<br>Available functions: ' + Object.keys(window).filter(key => typeof window[key] === 'function').slice(0, 10).join(', ');
+            }
+        }
+
+        function testShowScreen() {
+            if (typeof showScreen === 'function') {
+                showScreen('tournamentSetup');
+                document.getElementById('status').innerHTML = 'SUCCESS: Called showScreen("tournamentSetup")';
+            } else {
+                document.getElementById('status').innerHTML = 'ERROR: showScreen function not available';
+            }
+        }
+
+        // Wait for DOM to load
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('status').innerHTML = 'DOM loaded, checking for functions...';
+            setTimeout(testFunctions, 1000);
+        });
+    </script>
+</body>
+</html>
