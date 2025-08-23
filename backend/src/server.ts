@@ -2,6 +2,7 @@ import Fastify from 'fastify'
 import websocket from '@fastify/websocket'
 import cors from '@fastify/cors'
 import { v4 as uuidv4 } from 'uuid'
+import * as auth from './auth'
 
 const fastify = Fastify({
   logger: true
@@ -53,9 +54,301 @@ fastify.register(cors, {
 
 fastify.register(websocket)
 
+// Authentication middleware
+async function authenticate(request: any, reply: any) {
+  try {
+    console.log('=== Authentication ===')
+    console.log('Authorization header:', request.headers.authorization)
+    
+    const token = request.headers.authorization?.replace('Bearer ', '')
+    if (!token) {
+      console.log('No token provided')
+      reply.status(401)
+      return { error: 'No token provided' }
+    }
+    
+    const userId = await auth.verifyToken(token)
+    if (!userId) {
+      console.log('Invalid token')
+      reply.status(401)  
+      return { error: 'Invalid token' }
+    }
+    
+    console.log('Authentication successful for user:', userId)
+    request.userId = userId
+    return null // Success
+  } catch (error) {
+    console.error('Authentication error:', error)
+    reply.status(401)
+    return { error: 'Authentication failed' }
+  }
+}
+
 // Health check endpoint
 fastify.get('/health', async (request, reply) => {
   return { status: 'ok' }
+})
+
+// User Authentication endpoints
+fastify.post('/api/auth/register', async (request, reply) => {
+  try {
+    const { username, displayName, password, avatar } = request.body as {
+      username: string
+      displayName: string
+      password: string
+      avatar?: string
+    }
+    
+    if (!username || !displayName || !password) {
+      reply.status(400)
+      return { error: 'Missing required fields' }
+    }
+    
+    const user = await auth.createUser({ username, displayName, password, avatar })
+    const token = auth.generateToken(user.id)
+    
+    return { user, token }
+  } catch (error: any) {
+    reply.status(400)
+    return { error: error.message }
+  }
+})
+
+fastify.post('/api/auth/login', async (request, reply) => {
+  try {
+    const { username, password } = request.body as { username: string, password: string }
+    
+    if (!username || !password) {
+      reply.status(400)
+      return { error: 'Username and password required' }
+    }
+    
+    const user = await auth.authenticateUser(username, password)
+    if (!user) {
+      reply.status(401)
+      return { error: 'Invalid credentials' }
+    }
+    
+    const token = auth.generateToken(user.id)
+    return { user, token }
+  } catch (error: any) {
+    reply.status(400)
+    return { error: error.message }
+  }
+})
+
+// User Profile endpoints  
+fastify.get('/api/users/me', async (request, reply) => {
+  const authResult = await authenticate(request, reply)
+  if (authResult) return authResult
+  
+  try {
+    const user = await auth.getUserById((request as any).userId)
+    if (!user) {
+      reply.status(404)
+      return { error: 'User not found' }
+    }
+    return user
+  } catch (error: any) {
+    reply.status(500)
+    return { error: error.message }
+  }
+})
+
+fastify.put('/api/users/me', async (request, reply) => {
+  const authResult = await authenticate(request, reply)
+  if (authResult) return authResult
+  
+  try {
+    const { displayName, avatar } = request.body as { displayName?: string, avatar?: string }
+    const user = await auth.updateUserProfile((request as any).userId, { displayName, avatar })
+    return user
+  } catch (error: any) {
+    reply.status(400)
+    return { error: error.message }
+  }
+})
+
+fastify.get('/api/users/search', async (request, reply) => {
+  const authResult = await authenticate(request, reply)
+  if (authResult) return authResult
+  
+  try {
+    const { query } = request.query as { query?: string }
+    if (!query) {
+      reply.status(400)
+      return { error: 'Query parameter required' }
+    }
+    
+    const users = await auth.searchUsers(query)
+    return users
+  } catch (error: any) {
+    reply.status(500)
+    return { error: error.message }
+  }
+})
+
+fastify.get('/api/users/:id', async (request, reply) => {
+  const authResult = await authenticate(request, reply)
+  if (authResult) return authResult
+  
+  try {
+    const { id } = request.params as { id: string }
+    const user = await auth.getUserById(id)
+    if (!user) {
+      reply.status(404)
+      return { error: 'User not found' }
+    }
+    return user
+  } catch (error: any) {
+    reply.status(500)
+    return { error: error.message }
+  }
+})
+
+// Friends endpoints
+fastify.get('/api/users/me/friends', async (request, reply) => {
+  const authResult = await authenticate(request, reply)
+  if (authResult) return authResult
+  
+  try {
+    const friends = await auth.getFriends((request as any).userId)
+    return friends
+  } catch (error: any) {
+    reply.status(500)
+    return { error: error.message }
+  }
+})
+
+fastify.post('/api/users/me/friends/:friendId', async (request, reply) => {
+  console.log('=== Friend Addition Request ===')
+  console.log('Headers:', request.headers)
+  console.log('Params:', request.params)
+  console.log('Body:', request.body)
+  
+  const authResult = await authenticate(request, reply)
+  if (authResult) {
+    console.log('Authentication failed:', authResult)
+    return authResult
+  }
+  
+  try {
+    const { friendId } = request.params as { friendId: string }
+    const userId = (request as any).userId
+    console.log(`Adding friend: userId=${userId}, friendId=${friendId}`)
+    
+    await auth.addFriend(userId, friendId)
+    console.log('Friend added successfully')
+    return { success: true }
+  } catch (error: any) {
+    console.error('Friend addition error:', error.message)
+    reply.status(400)
+    return { error: error.message }
+  }
+})
+
+fastify.delete('/api/users/me/friends/:friendId', async (request, reply) => {
+  const authResult = await authenticate(request, reply)
+  if (authResult) return authResult
+  
+  try {
+    const { friendId } = request.params as { friendId: string }
+    await auth.removeFriend((request as any).userId, friendId)
+    return { success: true }
+  } catch (error: any) {
+    reply.status(400)
+    return { error: error.message }
+  }
+})
+
+// Statistics and Match History endpoints
+fastify.get('/api/users/me/stats', async (request, reply) => {
+  const authResult = await authenticate(request, reply)
+  if (authResult) return authResult
+  
+  try {
+    const stats = await auth.getUserStats((request as any).userId)
+    return stats
+  } catch (error: any) {
+    reply.status(500)
+    return { error: error.message }
+  }
+})
+
+fastify.get('/api/users/me/matches', async (request, reply) => {
+  const authResult = await authenticate(request, reply)
+  if (authResult) return authResult
+  
+  try {
+    const matches = await auth.getMatchHistory((request as any).userId)
+    return matches
+  } catch (error: any) {
+    reply.status(500)
+    return { error: error.message }
+  }
+})
+
+fastify.get('/api/users/:id/stats', async (request, reply) => {
+  const authResult = await authenticate(request, reply)
+  if (authResult) return authResult
+  
+  try {
+    const { id } = request.params as { id: string }
+    const stats = await auth.getUserStats(id)
+    return stats
+  } catch (error: any) {
+    reply.status(500)
+    return { error: error.message }
+  }
+})
+
+fastify.get('/api/users/:id/matches', async (request, reply) => {
+  const authResult = await authenticate(request, reply)
+  if (authResult) return authResult
+  
+  try {
+    const { id } = request.params as { id: string }
+    const matches = await auth.getMatchHistory(id)
+    return matches
+  } catch (error: any) {
+    reply.status(500)
+    return { error: error.message }
+  }
+})
+
+// Default avatars endpoint
+fastify.get('/api/avatars/defaults', async (request, reply) => {
+  return auth.getDefaultAvatars()
+})
+
+// Debug endpoint to list all users (for development only)
+fastify.get('/api/debug/users', async (request, reply) => {
+  const usersList = Array.from(auth.users.values()).map((user: any) => ({
+    id: user.id,
+    username: user.username,
+    displayName: user.displayName
+  }))
+  return { users: usersList, count: usersList.length }
+})
+
+// Avatar upload endpoint (simplified - just accepts avatar URL)
+fastify.post('/api/users/me/avatar', async (request, reply) => {
+  const authResult = await authenticate(request, reply)
+  if (authResult) return authResult
+  
+  try {
+    const { avatarUrl } = request.body as { avatarUrl: string }
+    if (!avatarUrl) {
+      reply.status(400)
+      return { error: 'Avatar URL required' }
+    }
+    
+    const user = await auth.updateUserProfile((request as any).userId, { avatar: avatarUrl })
+    return { user, avatarUrl }
+  } catch (error: any) {
+    reply.status(500)
+    return { error: error.message }
+  }
 })
 
 // Tournament endpoints
@@ -196,17 +489,37 @@ function handlePlayerRegistration(connection: any, data: any) {
 }
 
 function handleJoinTournament(connection: any, data: any) {
-  const { tournamentId } = data
+  const { tournamentId, playerId, playerName } = data
   const tournament = tournaments.get(tournamentId)
-  const player = players.get(connection.playerId)
   
-  console.log(`Join tournament request: tournamentId=${tournamentId}, playerId=${connection.playerId}`)
-  console.log(`Tournament exists: ${!!tournament}, Player exists: ${!!player}`)
+  console.log(`Join tournament request: tournamentId=${tournamentId}, playerId=${playerId}, playerName=${playerName}`)
+  console.log(`Tournament exists: ${!!tournament}`)
   
-  if (!tournament || !player) {
-    console.log(`Error: Tournament or player not found. Tournament: ${tournament?.id}, Player: ${player?.id}`)
-    connection.socket.send(JSON.stringify({ type: 'error', message: 'Tournament or player not found' }))
+  if (!tournament) {
+    console.log(`Error: Tournament not found: ${tournamentId}`)
+    connection.socket.send(JSON.stringify({ type: 'error', message: 'Tournament not found' }))
     return
+  }
+  
+  if (!playerId || !playerName) {
+    console.log(`Error: Player information missing`)
+    connection.socket.send(JSON.stringify({ type: 'error', message: 'Player information missing' }))
+    return
+  }
+  
+  // Create or get player
+  let player = players.get(playerId)
+  if (!player) {
+    player = { 
+      id: playerId, 
+      name: playerName, 
+      socket: connection.socket,
+      ready: false,
+      position: { x: 0, y: 0 }
+    }
+    players.set(playerId, player)
+    connection.playerId = playerId
+    console.log(`Player created: ${playerName} (${playerId})`)
   }
   
   if (tournament.status !== 'registration') {
@@ -272,15 +585,29 @@ function generateMatches(tournament: Tournament) {
 }
 
 function handleJoinGame(connection: any, data: any) {
-  const { matchId } = data
-  const player = players.get(connection.playerId)
+  const { matchId, playerId, playerName } = data
   
-  console.log(`Join game request: matchId=${matchId}, playerId=${connection.playerId}`)
+  console.log(`Join game request: matchId=${matchId}, playerId=${playerId}, playerName=${playerName}`)
   
-  if (!player) {
-    console.log(`Error: Player not found for ID: ${connection.playerId}`)
-    connection.socket.send(JSON.stringify({ type: 'error', message: 'Player not found' }))
+  if (!playerId || !playerName) {
+    console.log(`Error: Player information missing`)
+    connection.socket.send(JSON.stringify({ type: 'error', message: 'Player information missing' }))
     return
+  }
+  
+  // Create or get player
+  let player = players.get(playerId)
+  if (!player) {
+    player = { 
+      id: playerId, 
+      name: playerName, 
+      socket: connection.socket,
+      ready: false,
+      position: { x: 0, y: 0 }
+    }
+    players.set(playerId, player)
+    connection.playerId = playerId
+    console.log(`Player created for game: ${playerName} (${playerId})`)
   }
   
   let game = games.get(matchId)
@@ -318,31 +645,84 @@ function handleJoinGame(connection: any, data: any) {
 }
 
 function handlePlayerMove(connection: any, data: any) {
-  const { gameId, position } = data
+  const { gameId, playerId, playerName, position } = data
   const game = games.get(gameId)
-  const player = players.get(connection.playerId)
   
-  if (!game || !player) return
+  console.log(`Player move: gameId=${gameId}, playerId=${playerId}, position=${JSON.stringify(position)}`)
+  
+  if (!game) {
+    console.log(`Game not found: ${gameId}`)
+    return
+  }
+  
+  if (!playerId || !position) {
+    console.log(`Invalid move data: playerId=${playerId}, position=${JSON.stringify(position)}`)
+    return
+  }
+  
+  // Create or get player
+  let player = players.get(playerId)
+  if (!player && playerName) {
+    player = { 
+      id: playerId, 
+      name: playerName, 
+      socket: connection.socket,
+      ready: false,
+      position: { x: 0, y: 0 }
+    }
+    players.set(playerId, player)
+    connection.playerId = playerId
+    console.log(`Player created for move: ${playerName} (${playerId})`)
+  }
+  
+  if (!player) {
+    console.log(`Player not found: ${playerId}`)
+    return
+  }
   
   const playerInGame = game.players.find(p => p.id === player.id)
   if (playerInGame) {
     playerInGame.position = position
+    player.position = position
+    console.log(`Updated player position: ${player.name} -> ${JSON.stringify(position)}`)
     broadcastGameUpdate(game)
+  } else {
+    console.log(`Player ${player.name} not found in game ${gameId}`)
   }
 }
 
 function handlePlayerReady(connection: any, data: any) {
-  const { gameId } = data
+  const { gameId, playerId, playerName } = data
   const game = games.get(gameId)
-  const player = players.get(connection.playerId)
   
-  console.log(`Player ready request: gameId=${gameId}, playerId=${connection.playerId}`)
-  console.log(`Game exists: ${!!game}, Player exists: ${!!player}`)
+  console.log(`Player ready request: gameId=${gameId}, playerId=${playerId}, playerName=${playerName}`)
+  console.log(`Game exists: ${!!game}`)
   
-  if (!game || !player) {
-    console.log(`Error: Game or player not found`)
-    connection.socket.send(JSON.stringify({ type: 'error', message: 'Game or player not found' }))
+  if (!game) {
+    console.log(`Error: Game not found: ${gameId}`)
+    connection.socket.send(JSON.stringify({ type: 'error', message: 'Game not found' }))
     return
+  }
+  
+  if (!playerId || !playerName) {
+    console.log(`Error: Player information missing`)
+    connection.socket.send(JSON.stringify({ type: 'error', message: 'Player information missing' }))
+    return
+  }
+  
+  // Create or get player
+  let player = players.get(playerId)
+  if (!player) {
+    player = { 
+      id: playerId, 
+      name: playerName, 
+      socket: connection.socket,
+      ready: false,
+      position: { x: 0, y: 0 }
+    }
+    players.set(playerId, player)
+    connection.playerId = playerId
+    console.log(`Player created for ready: ${playerName} (${playerId})`)
   }
   
   const playerInGame = game.players.find(p => p.id === player.id)
@@ -430,6 +810,33 @@ function updateGameState(game: Game) {
   // Check win condition (first to 3 points wins)
   if (game.score.player1 >= 3 || game.score.player2 >= 3) {
     game.gameState = 'finished'
+    
+    // Record match in history if both players are registered users
+    if (game.players.length === 2) {
+      const player1 = game.players[0]
+      const player2 = game.players[1]
+      
+      // Find actual user IDs from registered players
+      let player1UserId: string | null = null
+      let player2UserId: string | null = null
+      
+      for (const [userId, player] of players.entries()) {
+        if (player.id === player1.id) player1UserId = userId
+        if (player.id === player2.id) player2UserId = userId
+      }
+      
+      if (player1UserId && player2UserId) {
+        const winnerId = game.score.player1 > game.score.player2 ? player1UserId : player2UserId
+        
+        auth.addMatchToHistory({
+          player1Id: player1UserId,
+          player2Id: player2UserId,
+          winnerId,
+          score: game.score,
+          playedAt: new Date()
+        }).catch(console.error)
+      }
+    }
   }
 }
 

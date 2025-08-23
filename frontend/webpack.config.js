@@ -1,5 +1,6 @@
 const path = require('path');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
+const CopyWebpackPlugin = require('copy-webpack-plugin');
 
 module.exports = {
   entry: './src/main.ts',
@@ -42,9 +43,21 @@ module.exports = {
     new HtmlWebpackPlugin({
       template: './src/index.html',
     }),
+    new CopyWebpackPlugin({
+      patterns: [
+        {
+          from: 'public',
+          to: '.',
+          noErrorOnMissing: true
+        }
+      ],
+    }),
   ],
   devServer: {
-    static: path.join(__dirname, 'dist'),
+    static: [
+      path.join(__dirname, 'dist'),
+      path.join(__dirname, 'public')
+    ],
     compress: true,
     port: 8080,
     historyApiFallback: true,

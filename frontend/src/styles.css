@@ -21,6 +21,18 @@
     @apply bg-neon-blue text-white hover:bg-blue-600;
   }
   
+  .btn-danger {
+    @apply bg-red-600 text-white hover:bg-red-700;
+  }
+  
+  .btn-outline {
+    @apply border-2 border-neon-cyan text-neon-cyan bg-transparent hover:bg-neon-cyan hover:text-game-bg;
+  }
+  
+  .btn-sm {
+    @apply px-3 py-1 text-sm;
+  }
+  
   .game-container {
     @apply mx-auto max-w-4xl p-6;
   }

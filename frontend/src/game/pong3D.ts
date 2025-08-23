@@ -190,6 +190,27 @@ export class Pong3DGame {
     this.scene.actionManager.registerAction(new ExecuteCodeAction(ActionManager.OnKeyUpTrigger, (evt) => {
       this.keys.delete(evt.sourceEvent.key)
     }))
+    
+    // Make sure canvas can receive keyboard events
+    this.canvas.setAttribute('tabindex', '0')
+    this.canvas.focus()
+    
+    // Add additional keyboard event listeners for better compatibility
+    this.canvas.addEventListener('keydown', (evt) => {
+      this.keys.add(evt.key)
+      this.handleInput()
+      evt.preventDefault()
+    })
+    
+    this.canvas.addEventListener('keyup', (evt) => {
+      this.keys.delete(evt.key)
+      evt.preventDefault()
+    })
+    
+    // Focus canvas on click
+    this.canvas.addEventListener('click', () => {
+      this.canvas.focus()
+    })
   }
 
   private setupRenderLoop() {
