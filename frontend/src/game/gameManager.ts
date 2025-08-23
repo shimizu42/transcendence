@@ -1,6 +1,8 @@
+import { Pong3DGame } from './pong3D'
+
 export class GameManager {
   private canvas: HTMLCanvasElement | null = null
-  private ctx: CanvasRenderingContext2D | null = null
+  private pong3D: Pong3DGame | null = null
   private gameData: any = null
   private keys: Set<string> = new Set()
 
@@ -23,107 +25,19 @@ export class GameManager {
     console.log('Game update received:', gameData)
     this.gameData = gameData
     this.initCanvas()
-    this.renderGame()
+    
+    // Initialize 3D mode on first game data
+    if (!this.pong3D) {
+      this.init3D()
+    }
+    
+    this.render3DGame()
     this.updateGameInfo()
   }
 
   private initCanvas() {
     if (!this.canvas) {
       this.canvas = document.getElementById('game-canvas') as HTMLCanvasElement
-      if (this.canvas) {
-        this.ctx = this.canvas.getContext('2d')
-      }
-    }
-  }
-
-  private renderGame() {
-    if (!this.ctx || !this.canvas || !this.gameData) return
-
-    // Clear canvas
-    this.ctx.fillStyle = '#000000'
-    this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height)
-
-    // Draw center line
-    this.ctx.strokeStyle = '#00d4ff'
-    this.ctx.setLineDash([10, 10])
-    this.ctx.beginPath()
-    this.ctx.moveTo(this.canvas.width / 2, 0)
-    this.ctx.lineTo(this.canvas.width / 2, this.canvas.height)
-    this.ctx.stroke()
-    this.ctx.setLineDash([])
-
-    // Draw paddles
-    this.ctx.fillStyle = '#00d4ff'
-    
-    if (this.gameData.players.length > 0) {
-      const player1 = this.gameData.players[0]
-      const paddle1Y = (player1.position.y / 100) * this.canvas.height - 50
-      this.ctx.fillRect(20, paddle1Y, 10, 100)
-    }
-
-    if (this.gameData.players.length > 1) {
-      const player2 = this.gameData.players[1]
-      const paddle2Y = (player2.position.y / 100) * this.canvas.height - 50
-      this.ctx.fillRect(this.canvas.width - 30, paddle2Y, 10, 100)
-    }
-
-    // Draw ball
-    this.ctx.fillStyle = '#ffffff'
-    const ballX = (this.gameData.ball.x / 100) * this.canvas.width
-    const ballY = (this.gameData.ball.y / 100) * this.canvas.height
-    this.ctx.beginPath()
-    this.ctx.arc(ballX, ballY, 8, 0, Math.PI * 2)
-    this.ctx.fill()
-
-    // Draw score
-    this.ctx.fillStyle = '#00d4ff'
-    this.ctx.font = '48px Courier New'
-    this.ctx.textAlign = 'center'
-    this.ctx.fillText(
-      this.gameData.score.player1.toString(),
-      this.canvas.width / 4,
-      60
-    )
-    this.ctx.fillText(
-      this.gameData.score.player2.toString(),
-      (3 * this.canvas.width) / 4,
-      60
-    )
-
-    // Draw player names
-    this.ctx.font = '16px Courier New'
-    if (this.gameData.players.length > 0) {
-      this.ctx.textAlign = 'left'
-      this.ctx.fillText(this.gameData.players[0].name, 40, 30)
-    }
-    if (this.gameData.players.length > 1) {
-      this.ctx.textAlign = 'right'
-      this.ctx.fillText(this.gameData.players[1].name, this.canvas.width - 40, 30)
-    }
-
-    // Draw game state
-    if (this.gameData.gameState !== 'playing') {
-      this.ctx.fillStyle = 'rgba(0, 0, 0, 0.8)'
-      this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height)
-      
-      this.ctx.fillStyle = '#00d4ff'
-      this.ctx.font = '32px Courier New'
-      this.ctx.textAlign = 'center'
-      
-      let message = ''
-      switch (this.gameData.gameState) {
-        case 'waiting':
-          message = 'プレイヤーを待機中...'
-          break
-        case 'finished':
-          const winner = this.gameData.score.player1 > this.gameData.score.player2 
-            ? this.gameData.players[0]?.name || 'Player 1'
-            : this.gameData.players[1]?.name || 'Player 2'
-          message = `${winner} の勝利！`
-          break
-      }
-      
-      this.ctx.fillText(message, this.canvas.width / 2, this.canvas.height / 2)
     }
   }
 
@@ -152,6 +66,25 @@ export class GameManager {
 
     if (newPosition) {
       window.app.sendPlayerMove(this.gameData.id, newPosition)
+    }
+  }
+
+  private init3D() {
+    if (!this.canvas) return
+    
+    try {
+      this.pong3D = new Pong3DGame(this.canvas)
+      if (this.gameData) {
+        this.pong3D.updateGameData(this.gameData)
+      }
+    } catch (error) {
+      console.error('Failed to initialize 3D mode:', error)
+    }
+  }
+
+  private render3DGame() {
+    if (this.pong3D && this.gameData) {
+      this.pong3D.updateGameData(this.gameData)
     }
   }
 

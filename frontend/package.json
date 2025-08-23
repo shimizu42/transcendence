@@ -9,7 +9,10 @@
     "lint": "eslint src --ext .ts",
     "typecheck": "tsc --noEmit"
   },
-  "dependencies": {},
+  "dependencies": {
+    "@babylonjs/core": "^8.24.0",
+    "@babylonjs/loaders": "^8.24.0"
+  },
   "devDependencies": {
     "@types/node": "^20.14.10",
     "@typescript-eslint/eslint-plugin": "^7.16.0",

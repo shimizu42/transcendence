@@ -29,6 +29,34 @@
     @apply border-2 border-neon-cyan rounded-lg bg-black;
   }
   
+  .game-fullscreen {
+    @apply fixed inset-0 bg-black z-50;
+  }
+  
+  .game-canvas-fullscreen {
+    @apply w-full h-full bg-black;
+  }
+  
+  .game-ui-overlay {
+    @apply absolute top-0 left-0 right-0 z-10 p-4 bg-gradient-to-b from-black/80 to-transparent;
+  }
+  
+  .game-header {
+    @apply text-center mb-4;
+  }
+  
+  .game-controls {
+    @apply flex justify-center space-x-2 mb-2;
+  }
+  
+  .game-instructions {
+    @apply text-center;
+  }
+  
+  .btn-sm {
+    @apply px-3 py-1 text-sm;
+  }
+  
   .tournament-bracket {
     @apply grid gap-4 p-4 bg-game-text rounded-lg;
   }

@@ -192,23 +192,24 @@ class App {
 
   private renderGame(id: string): string {
     return `
-      <div class="game-container">
-        <div class="text-center mb-6">
-          <h2 class="text-3xl font-bold text-neon-cyan">ゲーム - マッチ ${id.substring(0, 8)}</h2>
-          <div id="game-info" class="mb-4">
-            <p class="text-gray-300">ゲーム待機中...</p>
+      <div class="game-fullscreen">
+        <div class="game-ui-overlay">
+          <div class="game-header">
+            <h2 class="text-2xl font-bold text-neon-cyan">ゲーム - マッチ ${id.substring(0, 8)}</h2>
+            <div id="game-info" class="mb-2">
+              <p class="text-gray-300">ゲーム待機中...</p>
+            </div>
+          </div>
+          <div class="game-controls">
+            <button id="ready-btn" onclick="window.app.readyPlayer('${id}')" class="btn btn-primary btn-sm">準備完了</button>
+            <button onclick="window.app.navigateTo('/tournaments')" class="btn btn-secondary btn-sm ml-2">トーナメントに戻る</button>
+          </div>
+          <div id="game-instructions" class="game-instructions">
+            <p class="text-xs text-gray-400">上下矢印キーまたはW/Sキーでパドルを操作</p>
+            <p class="text-xs text-neon-cyan">3Dモード - マウスでカメラ操作可能</p>
           </div>
         </div>
-        <div class="flex justify-center">
-          <canvas id="game-canvas" class="game-canvas" width="800" height="400"></canvas>
-        </div>
-        <div class="text-center mt-4">
-          <button id="ready-btn" onclick="window.app.readyPlayer('${id}')" class="btn btn-primary">準備完了</button>
-          <button onclick="window.app.navigateTo('/tournaments')" class="btn btn-secondary ml-4">トーナメントに戻る</button>
-        </div>
-        <div id="game-controls" class="text-center mt-4 text-sm text-gray-400">
-          <p>上下矢印キーまたはW/Sキーでパドルを操作</p>
-        </div>
+        <canvas id="game-canvas" class="game-canvas-fullscreen"></canvas>
       </div>
     `
   }
