@@ -5,7 +5,7 @@
 ### フロントエンド 
 - シングルページアプリケーション (SPA)
 - tailwind css
-- Typescrip
+- Typescript
 - Babylon.js
 
 ### バックエンド 
