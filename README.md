@@ -4,17 +4,16 @@
 ## 技術スタック
 ### フロントエンド 
 - シングルページアプリケーション (SPA)
-- Typescript
 - tailwind css
+- Typescrip
 - Babylon.js
 
 ### バックエンド 
-- Fastify
 - Node.js
+- Fastify
 
-### コンテナ
+### インフラ
 - docker
-- docker-compose
 
 ## サービス仕様
 ### pongゲームシステム
