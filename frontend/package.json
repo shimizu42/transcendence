@@ -1,15 +1,31 @@
 {
   "name": "transcendence-frontend",
   "version": "1.0.0",
-  "description": "Pong Tournament Website Frontend",
-  "main": "dist/index.js",
+  "description": "Frontend for multiplayer Pong game with tournament system",
+  "main": "src/main.ts",
   "scripts": {
-    "build": "tsc src/app.ts --outDir dist --target ES2020 --lib ES2020,DOM && cp src/index.html dist/ && (cp -r assets dist/ 2>/dev/null || true)",
-    "dev": "tsc --watch",
-    "clean": "rm -rf dist"
+    "build": "webpack --mode production",
+    "dev": "webpack serve --mode development",
+    "lint": "eslint src --ext .ts",
+    "typecheck": "tsc --noEmit"
   },
-  "devDependencies": {},
-  "dependencies": {
-    "typescript": "^5.0.0"
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "^20.14.10",
+    "@typescript-eslint/eslint-plugin": "^7.16.0",
+    "@typescript-eslint/parser": "^7.16.0",
+    "autoprefixer": "^10.4.19",
+    "css-loader": "^7.1.2",
+    "eslint": "^8.57.0",
+    "html-webpack-plugin": "^5.6.0",
+    "postcss": "^8.4.39",
+    "postcss-loader": "^8.1.1",
+    "style-loader": "^4.0.0",
+    "tailwindcss": "^3.4.4",
+    "ts-loader": "^9.5.1",
+    "typescript": "^5.5.3",
+    "webpack": "^5.92.1",
+    "webpack-cli": "^5.1.4",
+    "webpack-dev-server": "^5.0.4"
   }
 }

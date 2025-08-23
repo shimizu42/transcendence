@@ -1,311 +1,408 @@
-import { PongGame } from './game/pong';
-import { Tournament, TournamentPlayer, Match } from './tournament/tournament';
-import { SecurityUtils } from './utils/security';
-import { ScreenManager, HistoryManager } from './utils/spa';
+import './styles.css'
+import { SPA } from './spa/spa'
+import { GameManager } from './game/gameManager'
+import { TournamentManager } from './tournament/tournamentManager'
 
-// Global state
-let currentGame: PongGame | null = null;
-let tournament: Tournament | null = null;
-let screenManager: ScreenManager;
-let historyManager: HistoryManager;
+class App {
+  private spa: SPA
+  private gameManager: GameManager
+  private tournamentManager: TournamentManager
+  private ws: WebSocket | null = null
+  private playerId: string | null = null
+  private playerName: string | null = null
 
-// Rate limiter for player additions to prevent spam
-const addPlayerRateLimiter = SecurityUtils.createRateLimiter(10, 60000); // 10 attempts per minute
+  constructor() {
+    this.spa = new SPA()
+    this.gameManager = new GameManager()
+    this.tournamentManager = new TournamentManager()
+    this.init()
+  }
 
-// Initialize the application
-document.addEventListener('DOMContentLoaded', () => {
-    initializeApp();
-});
+  private init() {
+    this.setupRoutes()
+    this.spa.init()
+    this.connectWebSocket()
+  }
 
-function initializeApp(): void {
-    // Enforce Content Security Policy
-    SecurityUtils.enforceCSP();
+  private setupRoutes() {
+    this.spa.addRoute('/', () => this.renderHome())
+    this.spa.addRoute('/register', () => this.renderRegister())
+    this.spa.addRoute('/tournaments', () => this.renderTournaments())
+    this.spa.addRoute('/tournament/:id', (params) => this.renderTournament(params.id))
+    this.spa.addRoute('/game/:id', (params) => this.renderGame(params.id))
+  }
 
-    // Initialize managers
-    screenManager = new ScreenManager();
-    historyManager = HistoryManager.getInstance();
+  private connectWebSocket() {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    const host = window.location.hostname
+    const port = '3000'  // Always connect directly to backend for WebSocket
     
-    // Initialize tournament
-    tournament = new Tournament();
-    tournament.setOnStateChange(updateTournamentDisplay);
-
-    // Setup global functions
-    setupGlobalFunctions();
-
-    // Initialize SPA routing
-    screenManager.init();
-
-    console.log('Pong Tournament application initialized');
-}
-
-function setupGlobalFunctions(): void {
-    // Make functions available globally for HTML onclick handlers
-    (window as any).showScreen = (screenId: string) => {
-        screenManager.showScreen(screenId);
-        historyManager.addEntry(screenId);
-    };
-
-    (window as any).addPlayer = addPlayer;
-    (window as any).startTournament = startTournament;
-    (window as any).playNextMatch = playNextMatch;
-    (window as any).startQuickGame = startQuickGame;
-}
-
-async function addPlayer(): Promise<void> {
-    const input = document.getElementById('playerNameInput') as HTMLInputElement;
-    const playerList = document.getElementById('playerList');
+    this.ws = new WebSocket(`${protocol}//${host}:${port}/ws`)
     
-    if (!input || !playerList || !tournament) return;
-
-    const rawName = input.value;
-
-    // Rate limiting
-    if (!addPlayerRateLimiter.isAllowed('addPlayer')) {
-        showErrorMessage('Too many attempts. Please wait before adding more players.');
-        return;
+    this.ws.onopen = () => {
+      console.log('WebSocket connected')
     }
-
-    // Validate and sanitize input
-    const validation = SecurityUtils.validatePlayerName(rawName);
-    if (!validation.isValid) {
-        showErrorMessage(validation.error || 'Invalid player name');
-        return;
+    
+    this.ws.onmessage = (event) => {
+      const data = JSON.parse(event.data)
+      this.handleWebSocketMessage(data)
     }
-
-    // Add delay to prevent timing attacks
-    await SecurityUtils.constantTimeDelay(100);
-
-    // Add player to tournament
-    const success = tournament.addPlayer(validation.sanitized);
-    if (!success) {
-        showErrorMessage('Player name already exists or is invalid');
-        return;
+    
+    this.ws.onclose = () => {
+      console.log('WebSocket disconnected')
+      // Attempt to reconnect after 3 seconds
+      setTimeout(() => this.connectWebSocket(), 3000)
     }
-
-    // Clear input
-    input.value = '';
     
-    // Update display
-    updatePlayerList();
-}
-
-function updatePlayerList(): void {
-    const playerList = document.getElementById('playerList');
-    const startBtn = document.getElementById('startTournamentBtn') as HTMLButtonElement;
-    
-    if (!playerList || !startBtn || !tournament) return;
-
-    const players = tournament.getState().players;
-    
-    playerList.innerHTML = '';
-    
-    if (players.length === 0) {
-        playerList.innerHTML = '<p>No players added yet.</p>';
-        startBtn.disabled = true;
-        return;
+    this.ws.onerror = (error) => {
+      console.error('WebSocket error:', error)
     }
+  }
 
-    players.forEach(player => {
-        const playerDiv = document.createElement('div');
-        playerDiv.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin: 5px 0; padding: 5px; background: #333; border-radius: 3px;';
+  private handleWebSocketMessage(data: any) {
+    switch (data.type) {
+      case 'player_registered':
+        this.playerId = data.player.id
+        this.playerName = data.player.name
+        console.log('Player registered:', data.player)
         
-        const nameSpan = document.createElement('span');
-        nameSpan.textContent = player.name;
+        // Show success message and redirect
+        setTimeout(() => {
+          alert(`プレイヤー登録完了: ${data.player.name}`)
+          this.navigateTo('/tournaments')
+        }, 500)
+        break
+      case 'tournament_update':
+        console.log('Tournament update received:', data.tournament)
+        this.tournamentManager.updateTournament(data.tournament)
         
-        const removeBtn = document.createElement('button');
-        removeBtn.textContent = 'Remove';
-        removeBtn.style.cssText = 'background: #ff4444; color: white; border: none; padding: 2px 8px; border-radius: 3px; cursor: pointer; font-size: 0.8em;';
-        removeBtn.onclick = () => removePlayer(player.id);
+        // Re-enable join button if needed
+        const joinButtons = document.querySelectorAll('button[onclick*="joinTournament"]')
+        joinButtons.forEach(button => {
+          button.removeAttribute('disabled')
+          button.textContent = '参加'
+        })
+        break
+      case 'game_update':
+        console.log('Game update received:', data.game)
+        this.gameManager.updateGame(data.game)
+        break
+      case 'error':
+        console.error('WebSocket error:', data.message)
+        alert(data.message)
         
-        playerDiv.appendChild(nameSpan);
-        playerDiv.appendChild(removeBtn);
-        playerList.appendChild(playerDiv);
-    });
+        // Re-enable buttons on error
+        const buttons = document.querySelectorAll('button[disabled]')
+        buttons.forEach(button => {
+          button.removeAttribute('disabled')
+          if (button.textContent?.includes('中...')) {
+            button.textContent = button.textContent.replace('中...', '')
+          }
+        })
+        break
+    }
+  }
 
-    // Enable start button if we have at least 2 players
-    startBtn.disabled = players.length < 2;
-}
+  private renderHome(): string {
+    return `
+      <div class="game-container">
+        <div class="text-center">
+          <h1 class="text-6xl font-bold mb-8 text-neon-cyan">TRANSCENDENCE</h1>
+          <p class="text-xl mb-8 text-gray-300">マルチプレイヤーPongトーナメント</p>
+          <div class="space-y-4">
+            <button onclick="app.navigateTo('/register')" class="btn btn-primary block mx-auto">
+              ゲーム参加
+            </button>
+            <button onclick="app.navigateTo('/tournaments')" class="btn btn-secondary block mx-auto">
+              トーナメント一覧
+            </button>
+          </div>
+        </div>
+      </div>
+    `
+  }
 
-function removePlayer(playerId: string): void {
-    if (!tournament) return;
+  private renderRegister(): string {
+    return `
+      <div class="game-container">
+        <div class="max-w-md mx-auto">
+          <h2 class="text-3xl font-bold mb-6 text-center text-neon-cyan">プレイヤー登録</h2>
+          <form id="register-form" class="space-y-4">
+            <div>
+              <label for="playerName" class="block text-sm font-medium mb-2">プレイヤー名（別名）</label>
+              <input 
+                type="text" 
+                id="playerName" 
+                name="playerName" 
+                required 
+                class="w-full px-3 py-2 bg-game-text border border-neon-blue rounded-lg focus:outline-none focus:border-neon-cyan text-white"
+                placeholder="あなたの別名を入力"
+              >
+            </div>
+            <button type="submit" class="btn btn-primary w-full">登録</button>
+          </form>
+        </div>
+      </div>
+    `
+  }
+
+  private renderTournaments(): string {
+    // Load tournaments when rendering the page
+    setTimeout(() => this.tournamentManager.loadTournaments(), 100)
     
-    tournament.removePlayer(playerId);
-    updatePlayerList();
-}
+    return `
+      <div class="game-container">
+        <div class="flex justify-between items-center mb-6">
+          <h2 class="text-3xl font-bold text-neon-cyan">トーナメント一覧</h2>
+          <button onclick="app.createTournament()" class="btn btn-primary">新しいトーナメント作成</button>
+        </div>
+        <div id="tournaments-list" class="space-y-4">
+          <!-- Tournament list will be populated here -->
+        </div>
+      </div>
+    `
+  }
 
-function startTournament(): void {
-    if (!tournament) return;
+  private renderTournament(id: string): string {
+    // Load tournament details when rendering
+    setTimeout(() => this.loadTournamentDetails(id), 100)
+    
+    return `
+      <div class="game-container">
+        <div id="tournament-detail">
+          <div class="text-center mb-6">
+            <h2 class="text-3xl font-bold text-neon-cyan mb-4">トーナメント</h2>
+            ${this.playerId ? `
+              <button onclick="app.joinTournament('${id}')" class="btn btn-primary mr-4">参加</button>
+              <button onclick="app.startTournament('${id}')" class="btn btn-secondary">開始</button>
+            ` : `
+              <div class="bg-yellow-900 border border-yellow-500 rounded-lg p-4 mb-4">
+                <p class="text-yellow-200">トーナメントに参加するにはプレイヤー登録が必要です</p>
+                <button onclick="app.navigateTo('/register')" class="btn btn-primary mt-2">プレイヤー登録</button>
+              </div>
+            `}
+          </div>
+          <div id="tournament-content">
+            <div class="text-center text-gray-400">読み込み中...</div>
+          </div>
+        </div>
+      </div>
+    `
+  }
 
-    const success = tournament.startTournament();
-    if (!success) {
-        showErrorMessage('Cannot start tournament. Need at least 2 players.');
-        return;
+  private renderGame(id: string): string {
+    return `
+      <div class="game-container">
+        <div class="text-center mb-6">
+          <h2 class="text-3xl font-bold text-neon-cyan">ゲーム - マッチ ${id.substring(0, 8)}</h2>
+          <div id="game-info" class="mb-4">
+            <p class="text-gray-300">ゲーム待機中...</p>
+          </div>
+        </div>
+        <div class="flex justify-center">
+          <canvas id="game-canvas" class="game-canvas" width="800" height="400"></canvas>
+        </div>
+        <div class="text-center mt-4">
+          <button id="ready-btn" onclick="window.app.readyPlayer('${id}')" class="btn btn-primary">準備完了</button>
+          <button onclick="window.app.navigateTo('/tournaments')" class="btn btn-secondary ml-4">トーナメントに戻る</button>
+        </div>
+        <div id="game-controls" class="text-center mt-4 text-sm text-gray-400">
+          <p>上下矢印キーまたはW/Sキーでパドルを操作</p>
+        </div>
+      </div>
+    `
+  }
+
+  // Public methods for UI interactions
+  public navigateTo(path: string) {
+    this.spa.navigateTo(path)
+  }
+
+  public registerPlayer(name: string) {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({
+        type: 'register_player',
+        name: name
+      }))
+    }
+  }
+
+  public async createTournament() {
+    if (!this.playerId) {
+      alert('プレイヤー登録が必要です')
+      this.navigateTo('/register')
+      return
     }
 
-    screenManager.showScreen('tournamentBracket');
-    historyManager.addEntry('tournamentBracket');
-}
+    const name = prompt('トーナメント名を入力してください:')
+    if (name) {
+      try {
+        const apiUrl = '/api/tournaments'
+        
+        const response = await fetch(apiUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name })
+        })
+        
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`)
+        }
+        
+        const tournament = await response.json()
+        this.navigateTo(`/tournament/${tournament.id}`)
+      } catch (error) {
+        console.error('Failed to create tournament:', error)
+        alert('トーナメント作成に失敗しました')
+      }
+    }
+  }
 
-function updateTournamentDisplay(): void {
-    if (!tournament) return;
-
-    const state = tournament.getState();
-    const bracketDisplay = document.getElementById('bracketDisplay');
-    const playNextBtn = document.getElementById('playNextBtn') as HTMLButtonElement;
-    
-    if (!bracketDisplay || !playNextBtn) return;
-
-    // Clear previous display
-    bracketDisplay.innerHTML = '';
-
-    if (state.matches.length === 0) {
-        bracketDisplay.innerHTML = '<p>No tournament in progress.</p>';
-        playNextBtn.disabled = true;
-        return;
+  public joinTournament(tournamentId: string) {
+    if (!this.playerId) {
+      alert('プレイヤー登録が必要です')
+      this.navigateTo('/register')
+      return
     }
 
-    // Display tournament bracket
-    const rounds = tournament.getBracketDisplay();
-    
-    rounds.forEach(round => {
-        const roundDiv = document.createElement('div');
-        roundDiv.style.cssText = 'margin: 20px 0; padding: 15px; border: 1px solid #666; border-radius: 5px;';
-        
-        const roundTitle = document.createElement('h3');
-        roundTitle.textContent = `Round ${round.round}`;
-        roundTitle.style.cssText = 'margin-bottom: 10px; text-align: center;';
-        roundDiv.appendChild(roundTitle);
-
-        round.matches.forEach(match => {
-            const matchDiv = document.createElement('div');
-            matchDiv.className = 'match';
-            matchDiv.style.cssText = 'background: #333; border: 1px solid #fff; padding: 10px; margin: 5px 0; border-radius: 5px; text-align: center;';
-            
-            const player1Name = match.player1?.name || 'TBD';
-            const player2Name = match.player2?.name || 'BYE';
-            const winnerName = match.winner?.name || '';
-            
-            matchDiv.innerHTML = `
-                <div style="margin-bottom: 5px;">
-                    <strong>${player1Name}</strong> vs <strong>${player2Name}</strong>
-                </div>
-                ${match.isPlayed ? `<div style="color: #4CAF50;">Winner: ${winnerName}</div>` : '<div style="color: #FFA500;">Not played</div>'}
-            `;
-            
-            roundDiv.appendChild(matchDiv);
-        });
-        
-        bracketDisplay.appendChild(roundDiv);
-    });
-
-    // Check if tournament is complete
-    if (state.isComplete && state.winner) {
-        const winnerDiv = document.createElement('div');
-        winnerDiv.style.cssText = 'margin-top: 30px; padding: 20px; background: #4CAF50; color: white; border-radius: 10px; text-align: center; font-size: 1.5em;';
-        winnerDiv.innerHTML = `<h2>🏆 Tournament Winner: ${state.winner.name}! 🏆</h2>`;
-        bracketDisplay.appendChild(winnerDiv);
-        playNextBtn.disabled = true;
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({
+        type: 'join_tournament',
+        tournamentId
+      }))
+      
+      // Show feedback
+      const button = document.querySelector(`button[onclick="app.joinTournament('${tournamentId}')"]`)
+      if (button) {
+        button.textContent = '参加中...'
+        button.setAttribute('disabled', 'true')
+      }
     } else {
-        // Enable/disable play next button
-        const nextMatch = tournament.getNextMatch();
-        playNextBtn.disabled = !nextMatch;
+      alert('サーバーとの接続が確立されていません')
     }
+  }
+
+  public startTournament(tournamentId: string) {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({
+        type: 'start_tournament',
+        tournamentId
+      }))
+    }
+  }
+
+  public joinGame(gameId: string) {
+    if (!this.playerId) {
+      alert('プレイヤー登録が必要です')
+      this.navigateTo('/register')
+      return
+    }
+
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      console.log(`Joining game: ${gameId}`)
+      this.ws.send(JSON.stringify({
+        type: 'join_game',
+        matchId: gameId
+      }))
+      
+      // Navigate to game screen
+      this.navigateTo(`/game/${gameId}`)
+    } else {
+      alert('サーバーとの接続が確立されていません')
+    }
+  }
+
+  public readyPlayer(gameId: string) {
+    console.log(`Ready player for game: ${gameId}`)
+    
+    if (!this.playerId) {
+      alert('プレイヤー登録が必要です')
+      return
+    }
+
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({
+        type: 'player_ready',
+        gameId
+      }))
+      
+      // Update button state
+      const button = document.getElementById('ready-btn')
+      if (button) {
+        button.textContent = '準備中...'
+        button.setAttribute('disabled', 'true')
+      }
+    } else {
+      alert('サーバーとの接続が確立されていません')
+    }
+  }
+
+  public sendPlayerMove(gameId: string, position: { x: number, y: number }) {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({
+        type: 'player_move',
+        gameId,
+        position
+      }))
+    }
+  }
+
+  public getPlayerId(): string | null {
+    return this.playerId
+  }
+
+  private async loadTournamentDetails(id: string) {
+    try {
+      const apiUrl = `/api/tournaments/${id}`
+      
+      const response = await fetch(apiUrl)
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+      
+      const tournament = await response.json()
+      this.tournamentManager.updateTournament(tournament)
+    } catch (error) {
+      console.error('Failed to load tournament details:', error)
+      const content = document.getElementById('tournament-content')
+      if (content) {
+        content.innerHTML = `
+          <div class="text-center text-red-400 py-8">
+            <p>トーナメント詳細の読み込みに失敗しました</p>
+            <button onclick="app.navigateTo('/tournaments')" class="btn btn-primary mt-4">
+              トーナメント一覧に戻る
+            </button>
+          </div>
+        `
+      }
+    }
+  }
 }
 
-function playNextMatch(): void {
-    if (!tournament) return;
+// Initialize the app
+const app = new App()
 
-    const nextMatch = tournament.getNextMatch();
-    if (!nextMatch) {
-        showErrorMessage('No matches available to play.');
-        return;
-    }
-
-    if (!nextMatch.player1 || !nextMatch.player2) {
-        showErrorMessage('Match players not ready.');
-        return;
-    }
-
-    // Start the game
-    startGame(nextMatch.player1.name, nextMatch.player2.name, (winner) => {
-        // Record the match result
-        const winnerId = nextMatch.player1?.name === winner ? nextMatch.player1.id : nextMatch.player2?.id;
-        if (winnerId) {
-            tournament?.recordMatchResult(nextMatch.id, winnerId);
-        }
-        
-        // Return to bracket view
-        screenManager.showScreen('tournamentBracket');
-    });
+// Make app globally available for UI interactions
+declare global {
+  interface Window {
+    app: App
+  }
 }
+window.app = app
 
-function startQuickGame(): void {
-    startGame('Player 1', 'Player 2', () => {
-        screenManager.showScreen('mainMenu');
-    });
-}
-
-function startGame(player1Name: string, player2Name: string, onGameEnd?: (winner: string) => void): void {
-    const canvas = document.getElementById('gameCanvas') as HTMLCanvasElement;
-    const gameStatus = document.getElementById('gameStatus');
+// Handle form submissions
+document.addEventListener('submit', (e) => {
+  if (e.target && (e.target as HTMLElement).id === 'register-form') {
+    e.preventDefault()
+    const form = e.target as HTMLFormElement
+    const formData = new FormData(form)
+    const playerName = formData.get('playerName') as string
     
-    if (!canvas || !gameStatus) return;
-
-    // Clean up previous game
-    if (currentGame) {
-        currentGame.destroy();
+    if (playerName.trim()) {
+      app.registerPlayer(playerName.trim())
+    } else {
+      alert('プレイヤー名を入力してください')
     }
-
-    // Create new game
-    currentGame = new PongGame(canvas, player1Name, player2Name);
-    
-    if (onGameEnd) {
-        currentGame.setOnGameEnd(onGameEnd);
-    }
-
-    // Update game status
-    gameStatus.textContent = `${player1Name} vs ${player2Name} - Press SPACE to start`;
-    
-    screenManager.showScreen('game');
-    historyManager.addEntry('game', { player1Name, player2Name });
-}
-
-function showErrorMessage(message: string): void {
-    // Create a temporary error display
-    const errorDiv = document.createElement('div');
-    errorDiv.style.cssText = 'position: fixed; top: 20px; right: 20px; background: #ff4444; color: white; padding: 15px; border-radius: 5px; z-index: 1000; font-family: inherit;';
-    errorDiv.textContent = message;
-    
-    document.body.appendChild(errorDiv);
-    
-    // Remove after 3 seconds
-    setTimeout(() => {
-        if (errorDiv.parentNode) {
-            errorDiv.parentNode.removeChild(errorDiv);
-        }
-    }, 3000);
-
-    // Log security event
-    SecurityUtils.logSecurityEvent('error_message_displayed', { message });
-}
-
-// Handle page visibility changes to pause games
-document.addEventListener('visibilitychange', () => {
-    if (document.hidden && currentGame) {
-        currentGame.pause();
-    }
-});
-
-// Handle window resize
-window.addEventListener('resize', () => {
-    // Could implement canvas resizing here if needed
-});
-
-// Cleanup on page unload
-window.addEventListener('beforeunload', () => {
-    if (currentGame) {
-        currentGame.destroy();
-    }
-});
-
-console.log('Pong Tournament main script loaded');
+  }
+})

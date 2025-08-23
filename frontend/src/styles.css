@@ -1,0 +1,43 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    font-family: 'Courier New', monospace;
+  }
+}
+
+@layer components {
+  .btn {
+    @apply px-6 py-3 rounded-lg font-semibold transition-all duration-200 transform hover:scale-105;
+  }
+  
+  .btn-primary {
+    @apply bg-neon-cyan text-game-bg hover:bg-cyan-400;
+  }
+  
+  .btn-secondary {
+    @apply bg-neon-blue text-white hover:bg-blue-600;
+  }
+  
+  .game-container {
+    @apply mx-auto max-w-4xl p-6;
+  }
+  
+  .game-canvas {
+    @apply border-2 border-neon-cyan rounded-lg bg-black;
+  }
+  
+  .tournament-bracket {
+    @apply grid gap-4 p-4 bg-game-text rounded-lg;
+  }
+  
+  .match-card {
+    @apply bg-neon-blue p-4 rounded-lg border border-neon-cyan;
+  }
+  
+  .player-card {
+    @apply bg-game-text p-3 rounded border-l-4 border-neon-cyan;
+  }
+}
