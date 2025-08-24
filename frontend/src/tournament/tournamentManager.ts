@@ -13,6 +13,7 @@ export class TournamentManager {
     let html = `
       <div class="mb-6">
         <h3 class="text-2xl font-bold mb-4">${this.currentTournament.name}</h3>
+        <p class="text-lg">ゲームタイプ: <span class="text-neon-cyan">${this.getGameTypeText(this.currentTournament.gameType)}</span></p>
         <p class="text-lg">ステータス: <span class="text-neon-cyan">${this.getStatusText(this.currentTournament.status)}</span></p>
         <p class="text-lg">参加者数: <span class="text-neon-cyan">${this.currentTournament.players.length}</span></p>
       </div>
@@ -178,6 +179,14 @@ export class TournamentManager {
     }
   }
 
+  private getGameTypeText(gameType: string): string {
+    switch (gameType) {
+      case 'pong': return '3D Pong'
+      case 'tank': return '3D Tank Battle'
+      default: return gameType || '3D Pong'
+    }
+  }
+
   public async loadTournaments() {
     try {
       const apiUrl = '/api/tournaments'
@@ -224,6 +233,7 @@ export class TournamentManager {
           <div>
             <h3 class="text-lg font-semibold">${tournament.name}</h3>
             <p class="text-sm text-gray-400">
+              ${this.getGameTypeText(tournament.gameType)} | 
               ステータス: ${this.getStatusText(tournament.status)} | 
               参加者: ${tournament.players.length}人
             </p>

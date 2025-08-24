@@ -19,8 +19,11 @@ interface Player {
 
 interface Game {
   id: string
+  gameType: 'pong' | 'tank'
   players: Player[]
-  ball: { x: number, y: number, dx: number, dy: number }
+  ball?: { x: number, y: number, dx: number, dy: number }
+  tanks?: { [playerId: string]: { position: { x: number, y: number, rotation: number }, turretRotation: number, health: number } }
+  bullets?: { id: string, x: number, y: number, dx: number, dy: number, ownerId: string }[]
   score: { player1: number, player2: number }
   gameState: 'waiting' | 'ready' | 'playing' | 'finished'
 }
@@ -28,6 +31,7 @@ interface Game {
 interface Tournament {
   id: string
   name: string
+  gameType: 'pong' | 'tank'
   players: Player[]
   matches: Match[]
   currentRound: number
@@ -353,11 +357,12 @@ fastify.post('/api/users/me/avatar', async (request, reply) => {
 
 // Tournament endpoints
 fastify.post('/api/tournaments', async (request, reply) => {
-  const { name } = request.body as { name: string }
+  const { name, gameType } = request.body as { name: string, gameType?: 'pong' | 'tank' }
   
   const tournament: Tournament = {
     id: uuidv4(),
     name,
+    gameType: gameType || 'pong',
     players: [],
     matches: [],
     currentRound: 1,
@@ -372,6 +377,7 @@ fastify.get('/api/tournaments', async (request, reply) => {
   const tournamentsList = Array.from(tournaments.values()).map(tournament => ({
     id: tournament.id,
     name: tournament.name,
+    gameType: tournament.gameType,
     players: tournament.players.map(player => ({
       id: player.id,
       name: player.name,
@@ -404,6 +410,7 @@ fastify.get('/api/tournaments/:id', async (request, reply) => {
   return {
     id: tournament.id,
     name: tournament.name,
+    gameType: tournament.gameType,
     players: tournament.players.map(player => ({
       id: player.id,
       name: player.name,
@@ -462,6 +469,9 @@ function handleWebSocketMessage(connection: any, data: any) {
       break
     case 'player_ready':
       handlePlayerReady(connection, data)
+      break
+    case 'tank_action':
+      handleTankAction(connection, data)
       break
     default:
       connection.socket.send(JSON.stringify({ type: 'error', message: 'Unknown message type' }))
@@ -595,6 +605,24 @@ function handleJoinGame(connection: any, data: any) {
     return
   }
   
+  // Find tournament by match ID to determine game type
+  let gameType: 'pong' | 'tank' = 'pong' // default
+  let tournamentFound = false
+  
+  for (const tournament of tournaments.values()) {
+    const match = tournament.matches.find(m => m.id === matchId)
+    if (match) {
+      gameType = tournament.gameType
+      tournamentFound = true
+      console.log(`Found match in tournament: ${tournament.name}, gameType: ${gameType}`)
+      break
+    }
+  }
+  
+  if (!tournamentFound) {
+    console.log(`Warning: Match ${matchId} not found in any tournament, using default gameType: ${gameType}`)
+  }
+  
   // Create or get player
   let player = players.get(playerId)
   if (!player) {
@@ -613,14 +641,23 @@ function handleJoinGame(connection: any, data: any) {
   let game = games.get(matchId)
   
   if (!game) {
-    console.log(`Creating new game: ${matchId}`)
+    console.log(`Creating new game: ${matchId} with gameType: ${gameType}`)
     game = {
       id: matchId,
+      gameType: gameType,
       players: [],
-      ball: { x: 50, y: 50, dx: 0.3, dy: 0.3 },
       score: { player1: 0, player2: 0 },
       gameState: 'waiting'
     }
+    
+    // Initialize game-specific properties
+    if (gameType === 'pong') {
+      game.ball = { x: 50, y: 50, dx: 0.3, dy: 0.3 }
+    } else if (gameType === 'tank') {
+      game.tanks = {}
+      game.bullets = []
+    }
+    
     games.set(matchId, game)
   }
   
@@ -630,6 +667,15 @@ function handleJoinGame(connection: any, data: any) {
   } else if (game.players.length < 2) {
     game.players.push(player)
     console.log(`Player ${player.name} joined game ${matchId}. Players: ${game.players.length}/2`)
+    
+    // Initialize tank data if it's a tank game
+    if (gameType === 'tank' && game.tanks) {
+      game.tanks[playerId] = {
+        position: { x: game.players.length === 1 ? 15 : 85, y: 50, rotation: 0 },
+        turretRotation: 0,
+        health: 100
+      }
+    }
     
     if (game.players.length === 2) {
       game.gameState = 'ready'
@@ -747,6 +793,93 @@ function handlePlayerReady(connection: any, data: any) {
   }
 }
 
+function handleTankAction(connection: any, data: any) {
+  const { gameId, playerId, playerName, action } = data
+  const game = games.get(gameId)
+  
+  console.log(`Tank action: gameId=${gameId}, playerId=${playerId}, action=${JSON.stringify(action)}`)
+  
+  if (!game || game.gameType !== 'tank') {
+    console.log(`Game not found or not a tank game: ${gameId}`)
+    return
+  }
+  
+  if (!playerId || !action) {
+    console.log(`Invalid tank action data: playerId=${playerId}, action=${JSON.stringify(action)}`)
+    return
+  }
+  
+  // Create or get player
+  let player = players.get(playerId)
+  if (!player && playerName) {
+    player = { 
+      id: playerId, 
+      name: playerName, 
+      socket: connection.socket,
+      ready: false,
+      position: { x: 0, y: 0 }
+    }
+    players.set(playerId, player)
+    connection.playerId = playerId
+    console.log(`Player created for tank action: ${playerName} (${playerId})`)
+  }
+  
+  if (!player) {
+    console.log(`Player not found: ${playerId}`)
+    return
+  }
+  
+  const playerInGame = game.players.find(p => p.id === player.id)
+  if (!playerInGame) {
+    console.log(`Player ${player.name} not found in game ${gameId}`)
+    return
+  }
+  
+  // Update tank data
+  if (!game.tanks) game.tanks = {}
+  if (!game.tanks[playerId]) {
+    game.tanks[playerId] = {
+      position: { x: 50, y: 50, rotation: 0 },
+      turretRotation: 0,
+      health: 100
+    }
+  }
+  
+  // Update tank position and turret rotation
+  if (action.position) {
+    game.tanks[playerId].position = action.position
+    player.position = { x: action.position.x, y: action.position.y }
+  }
+  
+  if (action.turretRotation !== undefined) {
+    game.tanks[playerId].turretRotation = action.turretRotation
+  }
+  
+  // Handle shooting
+  if (action.shoot && game.bullets) {
+    const tank = game.tanks[playerId]
+    const bulletId = require('uuid').v4()
+    
+    // Calculate bullet direction based on tank and turret rotation
+    const totalRotation = tank.position.rotation + tank.turretRotation
+    const bulletSpeed = 2
+    
+    const bullet = {
+      id: bulletId,
+      x: tank.position.x,
+      y: tank.position.y,
+      dx: Math.sin(totalRotation) * bulletSpeed,
+      dy: -Math.cos(totalRotation) * bulletSpeed,
+      ownerId: playerId
+    }
+    
+    game.bullets.push(bullet)
+    console.log(`Tank ${playerId} fired bullet ${bulletId}`)
+  }
+  
+  broadcastGameUpdate(game)
+}
+
 function startGame(game: Game) {
   console.log(`Starting game: ${game.id}`)
   game.gameState = 'playing'
@@ -764,6 +897,16 @@ function startGame(game: Game) {
 
 function updateGameState(game: Game) {
   if (game.gameState !== 'playing') return
+  
+  if (game.gameType === 'pong' && game.ball) {
+    updatePongGameState(game)
+  } else if (game.gameType === 'tank') {
+    updateTankGameState(game)
+  }
+}
+
+function updatePongGameState(game: Game) {
+  if (!game.ball) return
   
   // Update ball position
   game.ball.x += game.ball.dx
@@ -810,37 +953,97 @@ function updateGameState(game: Game) {
   // Check win condition (first to 3 points wins)
   if (game.score.player1 >= 3 || game.score.player2 >= 3) {
     game.gameState = 'finished'
+    recordMatchHistory(game)
+  }
+}
+
+function updateTankGameState(game: Game) {
+  if (!game.bullets) return
+  
+  // Update bullet positions
+  game.bullets = game.bullets.filter(bullet => {
+    bullet.x += bullet.dx
+    bullet.y += bullet.dy
     
-    // Record match in history if both players are registered users
-    if (game.players.length === 2) {
-      const player1 = game.players[0]
-      const player2 = game.players[1]
-      
-      // Find actual user IDs from registered players
-      let player1UserId: string | null = null
-      let player2UserId: string | null = null
-      
-      for (const [userId, player] of players.entries()) {
-        if (player.id === player1.id) player1UserId = userId
-        if (player.id === player2.id) player2UserId = userId
-      }
-      
-      if (player1UserId && player2UserId) {
-        const winnerId = game.score.player1 > game.score.player2 ? player1UserId : player2UserId
+    // Remove bullets that are out of bounds
+    if (bullet.x < 0 || bullet.x > 100 || bullet.y < 0 || bullet.y > 100) {
+      return false
+    }
+    
+    // Check bullet collision with tanks
+    if (game.tanks) {
+      for (const [playerId, tank] of Object.entries(game.tanks)) {
+        if (playerId === bullet.ownerId) continue // Can't hit yourself
         
-        auth.addMatchToHistory({
-          player1Id: player1UserId,
-          player2Id: player2UserId,
-          winnerId,
-          score: game.score,
-          playedAt: new Date()
-        }).catch(console.error)
+        const distance = Math.sqrt(
+          Math.pow(bullet.x - tank.position.x, 2) + 
+          Math.pow(bullet.y - tank.position.y, 2)
+        )
+        
+        if (distance < 3) { // Hit detection radius
+          tank.health -= 25
+          console.log(`Tank ${playerId} hit! Health: ${tank.health}`)
+          
+          if (tank.health <= 0) {
+            // Player with the destroyed tank loses
+            const destroyedPlayerIndex = game.players.findIndex(p => p.id === playerId)
+            if (destroyedPlayerIndex === 0) {
+              game.score.player2++
+            } else {
+              game.score.player1++
+            }
+            
+            // Reset tank health for next round
+            tank.health = 100
+            
+            // Check win condition (first to 3 points wins)
+            if (game.score.player1 >= 3 || game.score.player2 >= 3) {
+              game.gameState = 'finished'
+              recordMatchHistory(game)
+            }
+          }
+          
+          return false // Remove bullet
+        }
       }
+    }
+    
+    return true // Keep bullet
+  })
+}
+
+function recordMatchHistory(game: Game) {
+  // Record match in history if both players are registered users
+  if (game.players.length === 2) {
+    const player1 = game.players[0]
+    const player2 = game.players[1]
+    
+    // Find actual user IDs from registered players
+    let player1UserId: string | null = null
+    let player2UserId: string | null = null
+    
+    for (const [userId, player] of players.entries()) {
+      if (player.id === player1.id) player1UserId = userId
+      if (player.id === player2.id) player2UserId = userId
+    }
+    
+    if (player1UserId && player2UserId) {
+      const winnerId = game.score.player1 > game.score.player2 ? player1UserId : player2UserId
+      
+      auth.addMatchToHistory({
+        player1Id: player1UserId,
+        player2Id: player2UserId,
+        winnerId,
+        score: game.score,
+        playedAt: new Date()
+      }).catch(console.error)
     }
   }
 }
 
 function resetBall(game: Game) {
+  if (!game.ball) return
+  
   game.ball.x = 50
   game.ball.y = 50
   game.ball.dx = Math.random() > 0.5 ? 0.3 : -0.3
@@ -848,16 +1051,32 @@ function resetBall(game: Game) {
 }
 
 function broadcastGameUpdate(game: Game) {
-  const gameData = JSON.stringify({
+  const gameUpdateData: any = {
     type: 'game_update',
     game: {
       id: game.id,
-      players: game.players.map(p => ({ id: p.id, name: p.name, position: p.position, ready: p.ready })),
-      ball: game.ball,
+      gameType: game.gameType,
+      players: game.players.map(p => ({ 
+        id: p.id, 
+        name: p.name, 
+        position: p.position, 
+        ready: p.ready,
+        turretRotation: game.tanks?.[p.id]?.turretRotation || 0
+      })),
       score: game.score,
       gameState: game.gameState
     }
-  })
+  }
+  
+  // Add game-specific data
+  if (game.gameType === 'pong' && game.ball) {
+    gameUpdateData.game.ball = game.ball
+  } else if (game.gameType === 'tank') {
+    gameUpdateData.game.tanks = game.tanks
+    gameUpdateData.game.bullets = game.bullets
+  }
+  
+  const gameData = JSON.stringify(gameUpdateData)
   
   game.players.forEach(player => {
     if (player.socket.readyState === 1) {
@@ -872,6 +1091,7 @@ function broadcastTournamentUpdate(tournament: Tournament) {
     tournament: {
       id: tournament.id,
       name: tournament.name,
+      gameType: tournament.gameType,
       players: tournament.players.map(p => ({ id: p.id, name: p.name })),
       matches: tournament.matches.map(m => ({
         id: m.id,

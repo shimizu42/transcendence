@@ -527,8 +527,14 @@ class App {
             <button onclick="window.app.navigateTo('/tournaments')" class="btn btn-secondary btn-sm ml-2">トーナメントに戻る</button>
           </div>
           <div id="game-instructions" class="game-instructions">
-            <p class="text-xs text-gray-400">上下矢印キーまたはW/Sキーでパドルを操作</p>
-            <p class="text-xs text-neon-cyan">3Dモード - マウスでカメラ操作可能</p>
+            <div id="pong-instructions" class="hidden">
+              <p class="text-xs text-gray-400">上下矢印キーまたはW/Sキーでパドルを操作</p>
+              <p class="text-xs text-neon-cyan">3Dモード - マウスでカメラ操作可能</p>
+            </div>
+            <div id="tank-instructions" class="hidden">
+              <p class="text-xs text-gray-400">WASD: 移動 | 左右矢印/AD: 戦車回転 | QE: 砲塔回転</p>
+              <p class="text-xs text-neon-cyan">スペース/F: 射撃 | マウス: カメラ操作</p>
+            </div>
           </div>
         </div>
         <canvas id="game-canvas" class="game-canvas-fullscreen"></canvas>
@@ -558,34 +564,100 @@ class App {
       return
     }
 
-    const name = prompt('トーナメント名を入力してください:')
-    if (name) {
-      try {
-        const apiUrl = '/api/tournaments'
-        
-        const response = await fetch(apiUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${this.authManager.getToken()}`
-          },
-          body: JSON.stringify({ 
-            name,
-            creatorId: currentUser.id,
-            creatorName: currentUser.displayName
-          })
+    // Show tournament creation modal
+    this.showTournamentCreationModal()
+  }
+
+  private showTournamentCreationModal() {
+    const modalHtml = `
+      <div id="tournament-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div class="bg-game-text p-6 rounded-lg border border-neon-blue max-w-md w-full mx-4">
+          <h3 class="text-2xl font-bold text-neon-cyan mb-4">新しいトーナメント作成</h3>
+          <form id="tournament-create-form" class="space-y-4">
+            <div>
+              <label for="tournament-name" class="block text-sm font-medium mb-2">トーナメント名</label>
+              <input 
+                type="text" 
+                id="tournament-name" 
+                name="name" 
+                required 
+                class="w-full px-3 py-2 bg-game-bg border border-neon-blue rounded-lg focus:outline-none focus:border-neon-cyan text-white"
+                placeholder="トーナメント名を入力"
+              >
+            </div>
+            <div>
+              <label for="game-type" class="block text-sm font-medium mb-2">ゲームタイプ</label>
+              <select 
+                id="game-type" 
+                name="gameType" 
+                required 
+                class="w-full px-3 py-2 bg-game-bg border border-neon-blue rounded-lg focus:outline-none focus:border-neon-cyan text-white"
+              >
+                <option value="pong">3D Pong</option>
+                <option value="tank">3D Tank Battle</option>
+              </select>
+            </div>
+            <div class="flex space-x-4">
+              <button type="submit" class="btn btn-primary flex-1">作成</button>
+              <button type="button" onclick="app.closeTournamentModal()" class="btn btn-secondary flex-1">キャンセル</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    `
+    
+    document.body.insertAdjacentHTML('beforeend', modalHtml)
+    
+    const form = document.getElementById('tournament-create-form')
+    if (form) {
+      form.addEventListener('submit', this.handleTournamentCreation.bind(this))
+    }
+  }
+
+  private async handleTournamentCreation(e: Event) {
+    e.preventDefault()
+    const form = e.target as HTMLFormElement
+    const formData = new FormData(form)
+    const name = formData.get('name') as string
+    const gameType = formData.get('gameType') as string
+
+    const currentUser = this.authManager.getCurrentUser()
+    if (!currentUser) return
+
+    try {
+      const apiUrl = '/api/tournaments'
+      
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.authManager.getToken()}`
+        },
+        body: JSON.stringify({ 
+          name,
+          gameType,
+          creatorId: currentUser.id,
+          creatorName: currentUser.displayName
         })
-        
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`)
-        }
-        
-        const tournament = await response.json()
-        this.navigateTo(`/tournament/${tournament.id}`)
-      } catch (error) {
-        console.error('Failed to create tournament:', error)
-        alert('トーナメント作成に失敗しました')
+      })
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
       }
+      
+      const tournament = await response.json()
+      this.closeTournamentModal()
+      this.navigateTo(`/tournament/${tournament.id}`)
+    } catch (error) {
+      console.error('Failed to create tournament:', error)
+      alert('トーナメント作成に失敗しました')
+    }
+  }
+
+  public closeTournamentModal() {
+    const modal = document.getElementById('tournament-modal')
+    if (modal) {
+      modal.remove()
     }
   }
 
@@ -686,6 +758,19 @@ class App {
         playerId: currentUser.id,
         playerName: currentUser.displayName,
         position
+      }))
+    }
+  }
+
+  public sendTankAction(gameId: string, action: { position: { x: number, y: number, rotation: number }, turretRotation: number, shoot: boolean }) {
+    const currentUser = this.authManager.getCurrentUser()
+    if (this.ws && this.ws.readyState === WebSocket.OPEN && currentUser) {
+      this.ws.send(JSON.stringify({
+        type: 'tank_action',
+        gameId,
+        playerId: currentUser.id,
+        playerName: currentUser.displayName,
+        action
       }))
     }
   }

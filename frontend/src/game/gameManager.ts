@@ -1,8 +1,10 @@
 import { Pong3DGame } from './pong3D'
+import { Tank3DGame } from './tank3D'
 
 export class GameManager {
   private canvas: HTMLCanvasElement | null = null
   private pong3D: Pong3DGame | null = null
+  private tank3D: Tank3DGame | null = null
   private gameData: any = null
   private keys: Set<string> = new Set()
 
@@ -22,17 +24,27 @@ export class GameManager {
   }
 
   public updateGame(gameData: any) {
-    console.log('Game update received:', gameData)
+    console.log('Game update received - gameType:', gameData.gameType)
     this.gameData = gameData
     this.initCanvas()
     
-    // Initialize 3D mode on first game data
-    if (!this.pong3D) {
-      this.init3D()
+    // Initialize game based on type - check multiple possible locations
+    const gameType = gameData.gameType || gameData.type || gameData.mode || 'pong'
+    
+    if (gameType === 'pong') {
+      if (!this.pong3D) {
+        this.initPong3D()
+      }
+      this.renderPong3DGame()
+    } else if (gameType === 'tank') {
+      if (!this.tank3D) {
+        this.initTank3D()
+      }
+      this.renderTank3DGame()
     }
     
-    this.render3DGame()
     this.updateGameInfo()
+    this.updateInstructions(gameType)
   }
 
   private initCanvas() {
@@ -69,22 +81,53 @@ export class GameManager {
     }
   }
 
-  private init3D() {
+  private initPong3D() {
     if (!this.canvas) return
     
     try {
+      // Dispose existing games
+      if (this.tank3D) {
+        this.tank3D.dispose()
+        this.tank3D = null
+      }
+      
       this.pong3D = new Pong3DGame(this.canvas)
       if (this.gameData) {
         this.pong3D.updateGameData(this.gameData)
       }
     } catch (error) {
-      console.error('Failed to initialize 3D mode:', error)
+      console.error('Failed to initialize Pong 3D mode:', error)
     }
   }
 
-  private render3DGame() {
+  private initTank3D() {
+    if (!this.canvas) return
+    
+    try {
+      // Dispose existing games
+      if (this.pong3D) {
+        this.pong3D.dispose()
+        this.pong3D = null
+      }
+      
+      this.tank3D = new Tank3DGame(this.canvas)
+      if (this.gameData) {
+        this.tank3D.updateGameData(this.gameData)
+      }
+    } catch (error) {
+      console.error('Failed to initialize Tank 3D mode:', error)
+    }
+  }
+
+  private renderPong3DGame() {
     if (this.pong3D && this.gameData) {
       this.pong3D.updateGameData(this.gameData)
+    }
+  }
+
+  private renderTank3DGame() {
+    if (this.tank3D && this.gameData) {
+      this.tank3D.updateGameData(this.gameData)
     }
   }
 
@@ -138,6 +181,21 @@ export class GameManager {
       } else if (this.gameData.gameState === 'finished') {
         readyBtn.textContent = 'ゲーム終了'
         readyBtn.setAttribute('disabled', 'true')
+      }
+    }
+  }
+
+  private updateInstructions(gameType: string) {
+    const pongInstructions = document.getElementById('pong-instructions')
+    const tankInstructions = document.getElementById('tank-instructions')
+
+    if (pongInstructions && tankInstructions) {
+      if (gameType === 'tank') {
+        pongInstructions.classList.add('hidden')
+        tankInstructions.classList.remove('hidden')
+      } else {
+        tankInstructions.classList.add('hidden')
+        pongInstructions.classList.remove('hidden')
       }
     }
   }
