@@ -374,3 +374,196 @@ export async function getUserStats(userId: string): Promise<{
 export function getDefaultAvatars(): string[] {
   return [...DEFAULT_AVATARS]
 }
+
+// Messaging system (in-memory implementation)
+const messages = new Map<string, Message>() // messageId -> Message
+const conversations = new Map<string, string[]>() // userId -> messageIds[]
+const blockedUsers = new Map<string, Set<string>>() // userId -> Set of blocked userIds
+
+interface Message {
+  id: string
+  senderId: string
+  receiverId: string
+  content: string
+  type: string
+  data?: string
+  isRead: boolean
+  createdAt: Date
+  sender?: AuthUser
+  receiver?: AuthUser
+}
+
+export async function sendMessage(data: {
+  senderId: string
+  receiverId: string
+  content: string
+  type: string
+  data?: string | null
+}): Promise<Message> {
+  const sender = users.get(data.senderId)
+  const receiver = users.get(data.receiverId)
+  
+  if (!sender || !receiver) {
+    throw new Error('User not found')
+  }
+  
+  // Check if sender is blocked by receiver
+  const receiverBlocked = blockedUsers.get(data.receiverId) || new Set()
+  if (receiverBlocked.has(data.senderId)) {
+    throw new Error('You are blocked by this user')
+  }
+  
+  const messageId = uuidv4()
+  const message: Message = {
+    id: messageId,
+    senderId: data.senderId,
+    receiverId: data.receiverId,
+    content: data.content,
+    type: data.type,
+    data: data.data || undefined,
+    isRead: false,
+    createdAt: new Date(),
+    sender: (await getUserById(data.senderId)) || undefined,
+    receiver: (await getUserById(data.receiverId)) || undefined
+  }
+  
+  messages.set(messageId, message)
+  
+  // Add to conversations
+  const senderConversation = conversations.get(data.senderId) || []
+  const receiverConversation = conversations.get(data.receiverId) || []
+  
+  senderConversation.push(messageId)
+  receiverConversation.push(messageId)
+  
+  conversations.set(data.senderId, senderConversation)
+  conversations.set(data.receiverId, receiverConversation)
+  
+  return message
+}
+
+export async function getMessages(currentUserId: string, otherUserId?: string): Promise<Message[]> {
+  if (otherUserId) {
+    // Get conversation between two users
+    const userMessages = conversations.get(currentUserId) || []
+    const conversationMessages: Message[] = []
+    
+    for (const messageId of userMessages) {
+      const message = messages.get(messageId)
+      if (message && 
+          ((message.senderId === currentUserId && message.receiverId === otherUserId) ||
+           (message.senderId === otherUserId && message.receiverId === currentUserId))) {
+        conversationMessages.push(message)
+      }
+    }
+    
+    return conversationMessages.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+  } else {
+    // Get all messages for user
+    const userMessages = conversations.get(currentUserId) || []
+    const userMessageList: Message[] = []
+    
+    for (const messageId of userMessages) {
+      const message = messages.get(messageId)
+      if (message) {
+        userMessageList.push(message)
+      }
+    }
+    
+    return userMessageList.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+  }
+}
+
+export async function markMessageAsRead(messageId: string, userId: string): Promise<void> {
+  const message = messages.get(messageId)
+  if (!message) {
+    throw new Error('Message not found')
+  }
+  
+  if (message.receiverId !== userId) {
+    throw new Error('Unauthorized')
+  }
+  
+  message.isRead = true
+}
+
+export async function getConversations(userId: string): Promise<{
+  userId: string
+  user: AuthUser
+  lastMessage: Message
+  unreadCount: number
+}[]> {
+  const userMessages = conversations.get(userId) || []
+  const conversationMap = new Map<string, Message[]>()
+  
+  // Group messages by conversation partner
+  for (const messageId of userMessages) {
+    const message = messages.get(messageId)
+    if (message) {
+      const otherUserId = message.senderId === userId ? message.receiverId : message.senderId
+      if (!conversationMap.has(otherUserId)) {
+        conversationMap.set(otherUserId, [])
+      }
+      conversationMap.get(otherUserId)!.push(message)
+    }
+  }
+  
+  const userConversations: {
+    userId: string
+    user: AuthUser
+    lastMessage: Message
+    unreadCount: number
+  }[] = []
+  
+  for (const [otherUserId, messagesList] of conversationMap.entries()) {
+    const otherUser = await getUserById(otherUserId)
+    if (otherUser && messagesList.length > 0) {
+      const sortedMessages = messagesList.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      const lastMessage = sortedMessages[0]
+      const unreadCount = messagesList.filter(msg => msg.receiverId === userId && !msg.isRead).length
+      
+      userConversations.push({
+        userId: otherUserId,
+        user: otherUser,
+        lastMessage,
+        unreadCount
+      })
+    }
+  }
+  
+  return userConversations.sort((a, b) => b.lastMessage.createdAt.getTime() - a.lastMessage.createdAt.getTime())
+}
+
+// Blocking system functions
+export async function blockUser(userId: string, blockedId: string): Promise<void> {
+  const user = users.get(userId)
+  const blocked = users.get(blockedId)
+  
+  if (!user || !blocked) {
+    throw new Error('User not found')
+  }
+  
+  const userBlocked = blockedUsers.get(userId) || new Set()
+  userBlocked.add(blockedId)
+  blockedUsers.set(userId, userBlocked)
+}
+
+export async function unblockUser(userId: string, blockedId: string): Promise<void> {
+  const userBlocked = blockedUsers.get(userId) || new Set()
+  userBlocked.delete(blockedId)
+  blockedUsers.set(userId, userBlocked)
+}
+
+export async function getBlockedUsers(userId: string): Promise<AuthUser[]> {
+  const userBlocked = blockedUsers.get(userId) || new Set()
+  const blocked: AuthUser[] = []
+  
+  for (const blockedId of userBlocked) {
+    const user = await getUserById(blockedId)
+    if (user) {
+      blocked.push(user)
+    }
+  }
+  
+  return blocked
+}

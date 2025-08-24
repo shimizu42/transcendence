@@ -3,21 +3,26 @@ import { SPA } from './spa/spa'
 import { GameManager } from './game/gameManager'
 import { TournamentManager } from './tournament/tournamentManager'
 import { AuthManager } from './auth/authManager'
+import { ChatManager } from './chat/chatManager'
 
 class App {
   private spa: SPA
   private gameManager: GameManager
   private tournamentManager: TournamentManager
   private authManager: AuthManager
+  private chatManager: ChatManager
   private ws: WebSocket | null = null
   private playerId: string | null = null
   private playerName: string | null = null
+  private isChatMinimized: boolean = false
+  private currentChatUserId: string | null = null
 
   constructor() {
     this.spa = new SPA()
     this.gameManager = new GameManager()
     this.tournamentManager = new TournamentManager()
     this.authManager = new AuthManager()
+    this.chatManager = new ChatManager(this.authManager, this.ws)
     
     // Listen for user-loaded event to re-render when user info is available
     window.addEventListener('user-loaded', () => {
@@ -41,6 +46,7 @@ class App {
     this.spa.addRoute('/profile', () => this.renderProfile())
     this.spa.addRoute('/friends', () => this.renderFriends())
     this.spa.addRoute('/stats', () => this.renderStats())
+    this.spa.addRoute('/chat', () => this.renderChatPage())
     this.spa.addRoute('/tournaments', () => this.renderTournaments())
     this.spa.addRoute('/tournament/:id', (params) => this.renderTournament(params.id))
     this.spa.addRoute('/game/:id', (params) => this.renderGame(params.id))
@@ -55,6 +61,8 @@ class App {
     
     this.ws.onopen = () => {
       console.log('WebSocket connected')
+      // Update chat manager with WebSocket reference
+      this.chatManager = new ChatManager(this.authManager, this.ws)
     }
     
     this.ws.onmessage = (event) => {
@@ -100,6 +108,27 @@ class App {
       case 'game_update':
         console.log('Game update received:', data.game)
         this.gameManager.updateGame(data.game)
+        break
+      case 'new_message':
+        this.handleNewMessage(data.message)
+        break
+      case 'game_invitation':
+        this.handleGameInvitation(data.invitation)
+        break
+      case 'game_invitation_accepted':
+        alert(data.message)
+        if (data.gameId) {
+          this.navigateTo(`/game/${data.gameId}`)
+        }
+        break
+      case 'game_invitation_declined':
+        alert(data.message)
+        break
+      case 'tournament_match_notification':
+        this.handleTournamentMatchNotification(data)
+        break
+      case 'tournament_system_message':
+        this.handleTournamentSystemMessage(data)
         break
       case 'error':
         console.error('WebSocket error:', data.message)
@@ -147,6 +176,7 @@ class App {
               <button onclick="app.navigateTo('/profile')" class="btn btn-secondary">プロフィール</button>
               <button onclick="app.navigateTo('/friends')" class="btn btn-secondary">友達</button>
               <button onclick="app.navigateTo('/stats')" class="btn btn-secondary">統計</button>
+              <button onclick="app.navigateTo('/chat')" class="btn btn-secondary">チャット</button>
               <button onclick="app.navigateTo('/tournaments')" class="btn btn-primary">トーナメント</button>
             </div>
           </nav>
@@ -938,6 +968,7 @@ class App {
                 </div>
               </div>
               <div class="space-x-2">
+                <button onclick="app.openChatWith('${friend.id}')" class="btn btn-primary btn-sm">メッセージ</button>
                 <button onclick="app.viewUserStats('${friend.id}')" class="btn btn-secondary btn-sm">統計表示</button>
                 <button onclick="app.removeFriend('${friend.id}')" class="btn btn-danger btn-sm">削除</button>
               </div>
@@ -1048,6 +1079,311 @@ class App {
       }
     }
   }
+
+  private renderChatPage(): string {
+    const user = this.authManager.getCurrentUser()
+    if (!user) {
+      return this.redirectToLogin()
+    }
+
+    setTimeout(() => this.initializeChat(), 100)
+
+    return `
+      <div class="game-container">
+        <div class="max-w-6xl mx-auto">
+          <h2 class="text-3xl font-bold mb-6 text-center text-neon-cyan">チャット</h2>
+          ${this.chatManager.renderChatInterface()}
+          <div class="text-center mt-6">
+            <button onclick="app.navigateTo('/')" class="btn btn-secondary">戻る</button>
+          </div>
+        </div>
+      </div>
+    `
+  }
+
+  private async initializeChat() {
+    // Initialize chat interface
+    await this.loadConversations()
+    this.setupChatEventListeners()
+  }
+
+  private async loadConversations() {
+    const conversations = await this.chatManager.getConversations()
+    const conversationsContainer = document.getElementById('conversations-list')
+    
+    if (conversationsContainer) {
+      if (conversations.length === 0) {
+        conversationsContainer.innerHTML = '<div class="text-gray-400 text-xs p-2">会話がありません</div>'
+      } else {
+        conversationsContainer.innerHTML = conversations.map(conv => `
+          <div class="conversation-item p-2 rounded cursor-pointer hover:bg-game-bg border border-transparent hover:border-neon-blue" 
+               onclick="app.openConversation('${conv.userId}')">
+            <div class="flex items-center space-x-2">
+              <img src="${conv.user.avatar || '/avatars/default1.svg'}" alt="Avatar" class="w-6 h-6 rounded-full">
+              <div class="flex-1 min-w-0">
+                <div class="text-xs font-medium text-white truncate">${conv.user.displayName}</div>
+                <div class="text-xs text-gray-400 truncate">${conv.lastMessage.content}</div>
+              </div>
+              ${conv.unreadCount > 0 ? `<span class="bg-red-500 text-white text-xs rounded-full px-2 py-1">${conv.unreadCount}</span>` : ''}
+            </div>
+          </div>
+        `).join('')
+      }
+    }
+  }
+
+  private setupChatEventListeners() {
+    const messageInput = document.getElementById('message-input') as HTMLInputElement
+    if (messageInput) {
+      messageInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+          this.sendMessage()
+        }
+      })
+    }
+  }
+
+  private handleNewMessage(message: any) {
+    console.log('New message received:', message)
+    // Update chat UI if chat is open
+    if (this.currentChatUserId === message.senderId) {
+      this.loadMessages(message.senderId)
+    }
+    // Update conversations list
+    this.loadConversations()
+    // Show notification if chat is minimized or not focused
+    this.showMessageNotification(message)
+  }
+
+  private handleGameInvitation(invitation: any) {
+    const accept = confirm(`${invitation.sender.displayName}があなたを${invitation.gameType === 'pong' ? 'Pong' : 'Tank Battle'}ゲームに招待しています。受け入れますか？`)
+    
+    if (accept) {
+      this.chatManager.acceptGameInvitation(invitation.id).then((gameId) => {
+        if (gameId) {
+          this.navigateTo(`/game/${gameId}`)
+        }
+      })
+    } else {
+      this.chatManager.declineGameInvitation(invitation.id)
+    }
+  }
+
+  private handleTournamentMatchNotification(data: any) {
+    alert(data.message)
+    // Could also show in chat or as a persistent notification
+  }
+
+  private handleTournamentSystemMessage(data: any) {
+    alert(`トーナメント通知: ${data.message}`)
+  }
+
+  private showMessageNotification(message: any) {
+    // Simple notification - could be enhanced with proper notifications API
+    if (!document.hasFocus() || this.isChatMinimized) {
+      const unreadCount = document.getElementById('unread-count')
+      if (unreadCount) {
+        const current = parseInt(unreadCount.textContent || '0')
+        unreadCount.textContent = (current + 1).toString()
+        unreadCount.classList.remove('hidden')
+      }
+    }
+  }
+
+  // Chat management methods
+  public async openConversation(userId: string) {
+    this.currentChatUserId = userId
+    const user = await this.authManager.getUserById(userId)
+    
+    // Show message input and actions
+    const inputContainer = document.getElementById('message-input-container')
+    const chatMessages = document.getElementById('chat-messages')
+    
+    if (inputContainer && chatMessages) {
+      inputContainer.classList.remove('hidden')
+      
+      // Load messages for this conversation
+      await this.loadMessages(userId)
+    }
+  }
+
+  private async loadMessages(userId: string) {
+    const messages = await this.chatManager.getMessages(userId)
+    const chatMessages = document.getElementById('chat-messages')
+    
+    if (chatMessages) {
+      if (messages.length === 0) {
+        chatMessages.innerHTML = '<div class="text-center text-gray-400 text-sm">メッセージがありません</div>'
+      } else {
+        chatMessages.innerHTML = messages.map(msg => {
+          const isOwn = msg.senderId === this.authManager.getCurrentUser()?.id
+          const time = new Date(msg.createdAt).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })
+          
+          if (msg.type === 'game_invitation') {
+            const invitationData = JSON.parse(msg.data || '{}')
+            return `
+              <div class="message-item ${isOwn ? 'own' : 'other'} mb-3">
+                <div class="text-xs text-gray-400 mb-1">${msg.sender?.displayName} ${time}</div>
+                <div class="bg-blue-600 text-white p-3 rounded-lg max-w-xs">
+                  <div class="text-sm">${msg.content}</div>
+                  ${!isOwn && invitationData.invitationId ? `
+                    <div class="mt-2 space-x-2">
+                      <button onclick="app.acceptGameInvitation('${invitationData.invitationId}')" class="text-xs px-2 py-1 bg-green-500 rounded">受け入れる</button>
+                      <button onclick="app.declineGameInvitation('${invitationData.invitationId}')" class="text-xs px-2 py-1 bg-red-500 rounded">断る</button>
+                    </div>
+                  ` : ''}
+                </div>
+              </div>
+            `
+          } else {
+            return `
+              <div class="message-item ${isOwn ? 'own' : 'other'} mb-3">
+                <div class="text-xs text-gray-400 mb-1">${msg.sender?.displayName} ${time}</div>
+                <div class="bg-${isOwn ? 'neon-blue' : 'gray-600'} text-white p-2 rounded-lg max-w-xs">
+                  <div class="text-sm">${msg.content}</div>
+                </div>
+              </div>
+            `
+          }
+        }).join('')
+        
+        // Scroll to bottom
+        chatMessages.scrollTop = chatMessages.scrollHeight
+      }
+    }
+  }
+
+  public async sendMessage() {
+    const messageInput = document.getElementById('message-input') as HTMLInputElement
+    if (!messageInput || !this.currentChatUserId) return
+    
+    const content = messageInput.value.trim()
+    if (!content) return
+    
+    const success = await this.chatManager.sendMessage(this.currentChatUserId, content)
+    if (success) {
+      messageInput.value = ''
+      // Reload messages to show the sent message
+      await this.loadMessages(this.currentChatUserId)
+    }
+  }
+
+  public showGameInviteOptions() {
+    const modal = document.getElementById('game-invite-modal')
+    if (modal) {
+      modal.classList.remove('hidden')
+    }
+  }
+
+  public closeGameInviteModal() {
+    const modal = document.getElementById('game-invite-modal')
+    if (modal) {
+      modal.classList.add('hidden')
+    }
+  }
+
+  public async sendGameInvite(gameType: 'pong' | 'tank') {
+    if (!this.currentChatUserId) return
+    
+    const success = await this.chatManager.sendGameInvitation(this.currentChatUserId, gameType)
+    if (success) {
+      alert('ゲーム招待を送信しました')
+      this.closeGameInviteModal()
+    }
+  }
+
+  public async acceptGameInvitation(invitationId: string) {
+    const gameId = await this.chatManager.acceptGameInvitation(invitationId)
+    if (gameId) {
+      this.navigateTo(`/game/${gameId}`)
+    }
+  }
+
+  public async declineGameInvitation(invitationId: string) {
+    await this.chatManager.declineGameInvitation(invitationId)
+    // Reload messages to hide the invitation
+    if (this.currentChatUserId) {
+      await this.loadMessages(this.currentChatUserId)
+    }
+  }
+
+  public async viewProfile() {
+    if (this.currentChatUserId) {
+      const user = await this.authManager.getUserById(this.currentChatUserId)
+      const stats = await this.authManager.getStats(this.currentChatUserId)
+      
+      alert(`プロフィール: ${user.displayName}
+ユーザー名: @${user.username}
+ステータス: ${user.isOnline ? 'オンライン' : 'オフライン'}
+勝利: ${stats.wins}
+敗北: ${stats.losses}
+総試合: ${stats.totalGames}
+勝率: ${stats.winRate}%`)
+    }
+  }
+
+  public async blockUser() {
+    if (!this.currentChatUserId) return
+    
+    const user = await this.authManager.getUserById(this.currentChatUserId)
+    const confirm = window.confirm(`${user.displayName}をブロックしますか？`)
+    
+    if (confirm) {
+      const success = await this.chatManager.blockUser(this.currentChatUserId)
+      if (success) {
+        alert('ユーザーをブロックしました')
+        this.loadConversations() // Refresh conversations
+      }
+    }
+  }
+
+  // Chat UI management
+  public toggleView() {
+    // Toggle between conversations and chat view (for mobile/small screens)
+    const conversationsPanel = document.getElementById('conversations-panel')
+    const chatPanel = document.getElementById('chat-panel')
+    
+    if (conversationsPanel && chatPanel) {
+      const isShowingConversations = !conversationsPanel.classList.contains('hidden')
+      
+      if (isShowingConversations) {
+        conversationsPanel.classList.add('hidden')
+        chatPanel.classList.remove('w-1/3')
+        chatPanel.classList.add('w-full')
+      } else {
+        conversationsPanel.classList.remove('hidden')
+        chatPanel.classList.remove('w-full')
+        chatPanel.classList.add('w-1/3')
+      }
+    }
+  }
+
+  public minimize() {
+    const chatContainer = document.getElementById('chat-container')
+    const minimized = this.chatManager.renderMinimizedChat()
+    
+    if (chatContainer) {
+      chatContainer.outerHTML = minimized
+      this.isChatMinimized = true
+    }
+  }
+
+  public restore() {
+    const minimizedChat = document.getElementById('chat-minimized')
+    if (minimizedChat) {
+      minimizedChat.outerHTML = this.chatManager.renderChatInterface()
+      this.isChatMinimized = false
+      this.initializeChat()
+    }
+  }
+
+  public openChatWith(userId: string) {
+    // Navigate to chat page and open conversation with specific user
+    this.navigateTo('/chat')
+    setTimeout(() => {
+      this.openConversation(userId)
+    }, 200)
+  }
 }
 
 // Initialize the app
@@ -1057,9 +1393,11 @@ const app = new App()
 declare global {
   interface Window {
     app: App
+    chat: App  // Add chat as alias to app
   }
 }
 window.app = app
+window.chat = app  // Make chat methods available globally
 
 // Handle form submissions
 document.addEventListener('submit', (e) => {
