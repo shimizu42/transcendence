@@ -182,7 +182,7 @@ export class TournamentManager {
   private getGameTypeText(gameType: string): string {
     switch (gameType) {
       case 'pong': return '3D Pong'
-      case 'tank': return '3D Tank Battle'
+      case 'tank': return '3D Tank'
       default: return gameType || '3D Pong'
     }
   }

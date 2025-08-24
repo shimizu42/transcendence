@@ -14,8 +14,6 @@ class App {
   private chatManager: ChatManager
   private dashboardManager: DashboardManager
   private ws: WebSocket | null = null
-  private playerId: string | null = null
-  private playerName: string | null = null
   private isChatMinimized: boolean = false
   private currentChatUserId: string | null = null
 
@@ -44,7 +42,6 @@ class App {
   private setupRoutes() {
     this.spa.addRoute('/', () => this.renderHome())
     this.spa.addRoute('/login', () => this.renderLogin())
-    this.spa.addRoute('/register', () => this.renderRegister())
     this.spa.addRoute('/signup', () => this.renderSignup())
     this.spa.addRoute('/profile', () => this.renderProfile())
     this.spa.addRoute('/friends', () => this.renderFriends())
@@ -88,17 +85,6 @@ class App {
 
   private handleWebSocketMessage(data: any) {
     switch (data.type) {
-      case 'player_registered':
-        this.playerId = data.player.id
-        this.playerName = data.player.name
-        console.log('Player registered:', data.player)
-        
-        // Show success message and redirect
-        setTimeout(() => {
-          alert(`プレイヤー登録完了: ${data.player.name}`)
-          this.navigateTo('/tournaments')
-        }, 500)
-        break
       case 'tournament_update':
         console.log('Tournament update received:', data.tournament)
         this.tournamentManager.updateTournament(data.tournament)
@@ -222,9 +208,6 @@ class App {
               <button onclick="app.navigateTo('/signup')" class="btn btn-secondary block mx-auto">
                 新規登録
               </button>
-              <button onclick="app.navigateTo('/register')" class="btn btn-outline block mx-auto">
-                ゲスト参加
-              </button>
             </div>
           </div>
         </div>
@@ -311,34 +294,6 @@ class App {
     `
   }
 
-  private renderRegister(): string {
-    return `
-      <div class="game-container">
-        <div class="max-w-md mx-auto">
-          <h2 class="text-3xl font-bold mb-6 text-center text-neon-cyan">ゲスト参加</h2>
-          <p class="text-gray-400 mb-4 text-center">ゲストとして一時的にゲームに参加できます</p>
-          <form id="register-form" class="space-y-4">
-            <div>
-              <label for="playerName" class="block text-sm font-medium mb-2">プレイヤー名（別名）</label>
-              <input 
-                type="text" 
-                id="playerName" 
-                name="playerName" 
-                required 
-                class="w-full px-3 py-2 bg-game-text border border-neon-blue rounded-lg focus:outline-none focus:border-neon-cyan text-white"
-                placeholder="あなたの別名を入力"
-              >
-            </div>
-            <button type="submit" class="btn btn-primary w-full">ゲスト登録</button>
-          </form>
-          <div class="text-center mt-4">
-            <p class="text-gray-400">統計や友達機能をご利用いただくには</p>
-            <button onclick="app.navigateTo('/signup')" class="btn btn-secondary mt-2">アカウント登録</button>
-          </div>
-        </div>
-      </div>
-    `
-  }
 
   private renderProfile(): string {
     const user = this.authManager.getCurrentUser()
@@ -535,8 +490,11 @@ class App {
               <button onclick="app.startTournament('${id}')" class="btn btn-secondary">開始</button>
             ` : `
               <div class="bg-yellow-900 border border-yellow-500 rounded-lg p-4 mb-4">
-                <p class="text-yellow-200">トーナメントに参加するにはログインが必要です</p>
-                <button onclick="app.navigateTo('/login')" class="btn btn-primary mt-2">ログイン</button>
+                <p class="text-yellow-200">トーナメントに参加するにはログインまたは新規登録が必要です</p>
+                <div class="mt-2 space-x-2">
+                  <button onclick="app.navigateTo('/login')" class="btn btn-primary">ログイン</button>
+                  <button onclick="app.navigateTo('/signup')" class="btn btn-secondary">新規登録</button>
+                </div>
               </div>
             `}
           </div>
@@ -583,14 +541,6 @@ class App {
     this.spa.navigateTo(path)
   }
 
-  public registerPlayer(name: string) {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({
-        type: 'register_player',
-        name: name
-      }))
-    }
-  }
 
   public async createTournament() {
     const currentUser = this.authManager.getCurrentUser()
@@ -630,7 +580,7 @@ class App {
                 class="w-full px-3 py-2 bg-game-bg border border-neon-blue rounded-lg focus:outline-none focus:border-neon-cyan text-white"
               >
                 <option value="pong">3D Pong</option>
-                <option value="tank">3D Tank Battle</option>
+                <option value="tank">3D Tank</option>
               </select>
             </div>
             <div class="flex space-x-4">
@@ -1162,7 +1112,7 @@ class App {
   }
 
   private handleGameInvitation(invitation: any) {
-    const accept = confirm(`${invitation.sender.displayName}があなたを${invitation.gameType === 'pong' ? 'Pong' : 'Tank Battle'}ゲームに招待しています。受け入れますか？`)
+    const accept = confirm(`${invitation.sender.displayName}があなたを${invitation.gameType === 'pong' ? 'Pong' : 'Tank'}ゲームに招待しています。受け入れますか？`)
     
     if (accept) {
       this.chatManager.acceptGameInvitation(invitation.id).then((gameId) => {
@@ -1611,7 +1561,7 @@ class App {
                   <div class="flex items-center space-x-4">
                     <div class="text-2xl">${match.gameType === 'pong' ? '🏓' : '🚗'}</div>
                     <div>
-                      <p class="font-medium text-white">${match.gameType === 'pong' ? 'Pong' : 'Tank Battle'}</p>
+                      <p class="font-medium text-white">${match.gameType === 'pong' ? 'Pong' : 'Tank'}</p>
                       <p class="text-sm text-gray-400">${date}</p>
                     </div>
                   </div>
@@ -1697,7 +1647,7 @@ class App {
             
             <!-- Tank Stats -->
             <div class="bg-game-text border border-neon-blue rounded-lg p-6">
-              <h3 class="text-xl font-bold text-red-400 mb-4">🚗 Tank Battle統計</h3>
+              <h3 class="text-xl font-bold text-red-400 mb-4">🚗 Tank統計</h3>
               <div class="space-y-4">
                 <div class="flex justify-between">
                   <span class="text-gray-300">総試合数:</span>
@@ -1882,14 +1832,6 @@ document.addEventListener('submit', (e) => {
       app.updateProfile(displayName.trim())
     } else {
       alert('表示名を入力してください')
-    }
-  } else if (form.id === 'register-form') {
-    const playerName = formData.get('playerName') as string
-    
-    if (playerName.trim()) {
-      app.registerPlayer(playerName.trim())
-    } else {
-      alert('プレイヤー名を入力してください')
     }
   }
 })

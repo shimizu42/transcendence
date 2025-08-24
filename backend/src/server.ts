@@ -529,7 +529,7 @@ fastify.post('/api/invitations/game', async (request, reply) => {
     const message = await auth.sendMessage({
       senderId,
       receiverId,
-      content: `${sender.displayName}があなたを${gameType === 'pong' ? 'Pong' : 'Tank Battle'}ゲームに招待しています`,
+      content: `${sender.displayName}があなたを${gameType === 'pong' ? 'Pong' : 'Tank'}ゲームに招待しています`,
       type: 'game_invitation',
       data: JSON.stringify(invitationData)
     })
@@ -762,9 +762,6 @@ fastify.register(async function (fastify) {
 
 function handleWebSocketMessage(connection: any, data: any) {
   switch (data.type) {
-    case 'register_player':
-      handlePlayerRegistration(connection, data)
-      break
     case 'join_tournament':
       handleJoinTournament(connection, data)
       break
@@ -788,25 +785,6 @@ function handleWebSocketMessage(connection: any, data: any) {
   }
 }
 
-function handlePlayerRegistration(connection: any, data: any) {
-  const player: Player = {
-    id: uuidv4(),
-    name: data.name,
-    socket: connection.socket,
-    ready: false,
-    position: { x: 0, y: 50 }
-  }
-  
-  players.set(player.id, player)
-  connection.playerId = player.id
-  
-  console.log(`Player registered: ${player.name} (${player.id}), connection.playerId set to: ${connection.playerId}`)
-  
-  connection.socket.send(JSON.stringify({
-    type: 'player_registered',
-    player: { id: player.id, name: player.name }
-  }))
-}
 
 function handleJoinTournament(connection: any, data: any) {
   const { tournamentId, playerId, playerName } = data

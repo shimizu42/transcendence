@@ -387,8 +387,8 @@ export class DashboardManager {
         } else if (tank.winRate > pong.winRate + 20) {
           insights.push({
             type: 'trend',
-            title: 'Tank Battleが得意',
-            description: 'Tank Battleでより良いパフォーマンスを発揮しています',
+            title: 'Tankが得意',
+            description: 'Tankでより良いパフォーマンスを発揮しています',
             value: `Tank: ${tank.winRate}% vs Pong: ${pong.winRate}%`
           })
         }

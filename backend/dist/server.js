@@ -328,6 +328,274 @@ fastify.post('/api/users/me/avatar', async (request, reply) => {
         return { error: error.message };
     }
 });
+// Messaging endpoints
+fastify.get('/api/messages', async (request, reply) => {
+    const authResult = await authenticate(request, reply);
+    if (authResult)
+        return authResult;
+    try {
+        const { userId } = request.query;
+        const currentUserId = request.userId;
+        const messages = await auth.getMessages(currentUserId, userId);
+        return messages;
+    }
+    catch (error) {
+        reply.status(500);
+        return { error: error.message };
+    }
+});
+fastify.post('/api/messages', async (request, reply) => {
+    const authResult = await authenticate(request, reply);
+    if (authResult)
+        return authResult;
+    try {
+        const { receiverId, content, type, data } = request.body;
+        if (!receiverId || !content) {
+            reply.status(400);
+            return { error: 'Receiver ID and content are required' };
+        }
+        const senderId = request.userId;
+        const message = await auth.sendMessage({
+            senderId,
+            receiverId,
+            content,
+            type: type || 'text',
+            data: data ? JSON.stringify(data) : null
+        });
+        // Notify receiver via WebSocket if they're connected
+        const receiver = players.get(receiverId);
+        if (receiver && receiver.socket.readyState === 1) {
+            receiver.socket.send(JSON.stringify({
+                type: 'new_message',
+                message
+            }));
+        }
+        return message;
+    }
+    catch (error) {
+        reply.status(400);
+        return { error: error.message };
+    }
+});
+fastify.put('/api/messages/:id/read', async (request, reply) => {
+    const authResult = await authenticate(request, reply);
+    if (authResult)
+        return authResult;
+    try {
+        const { id } = request.params;
+        const userId = request.userId;
+        await auth.markMessageAsRead(id, userId);
+        return { success: true };
+    }
+    catch (error) {
+        reply.status(400);
+        return { error: error.message };
+    }
+});
+fastify.get('/api/messages/conversations', async (request, reply) => {
+    const authResult = await authenticate(request, reply);
+    if (authResult)
+        return authResult;
+    try {
+        const userId = request.userId;
+        const conversations = await auth.getConversations(userId);
+        return conversations;
+    }
+    catch (error) {
+        reply.status(500);
+        return { error: error.message };
+    }
+});
+// Blocking endpoints
+fastify.get('/api/users/me/blocked', async (request, reply) => {
+    const authResult = await authenticate(request, reply);
+    if (authResult)
+        return authResult;
+    try {
+        const userId = request.userId;
+        const blockedUsers = await auth.getBlockedUsers(userId);
+        return blockedUsers;
+    }
+    catch (error) {
+        reply.status(500);
+        return { error: error.message };
+    }
+});
+fastify.post('/api/users/me/block/:userId', async (request, reply) => {
+    const authResult = await authenticate(request, reply);
+    if (authResult)
+        return authResult;
+    try {
+        const { userId: blockedId } = request.params;
+        const userId = request.userId;
+        if (userId === blockedId) {
+            reply.status(400);
+            return { error: 'Cannot block yourself' };
+        }
+        await auth.blockUser(userId, blockedId);
+        return { success: true };
+    }
+    catch (error) {
+        reply.status(400);
+        return { error: error.message };
+    }
+});
+fastify.delete('/api/users/me/block/:userId', async (request, reply) => {
+    const authResult = await authenticate(request, reply);
+    if (authResult)
+        return authResult;
+    try {
+        const { userId: blockedId } = request.params;
+        const userId = request.userId;
+        await auth.unblockUser(userId, blockedId);
+        return { success: true };
+    }
+    catch (error) {
+        reply.status(400);
+        return { error: error.message };
+    }
+});
+// Game invitation endpoints
+fastify.post('/api/invitations/game', async (request, reply) => {
+    const authResult = await authenticate(request, reply);
+    if (authResult)
+        return authResult;
+    try {
+        const { receiverId, gameType } = request.body;
+        if (!receiverId || !gameType) {
+            reply.status(400);
+            return { error: 'Receiver ID and game type are required' };
+        }
+        const senderId = request.userId;
+        const sender = await auth.getUserById(senderId);
+        if (!sender) {
+            reply.status(404);
+            return { error: 'Sender not found' };
+        }
+        // Create game invitation message
+        const invitationData = {
+            gameType,
+            invitationId: require('uuid').v4()
+        };
+        const message = await auth.sendMessage({
+            senderId,
+            receiverId,
+            content: `${sender.displayName}があなたを${gameType === 'pong' ? 'Pong' : 'Tank'}ゲームに招待しています`,
+            type: 'game_invitation',
+            data: JSON.stringify(invitationData)
+        });
+        // Notify receiver via WebSocket if they're connected
+        const receiver = players.get(receiverId);
+        if (receiver && receiver.socket.readyState === 1) {
+            receiver.socket.send(JSON.stringify({
+                type: 'game_invitation',
+                invitation: {
+                    id: invitationData.invitationId,
+                    sender,
+                    gameType,
+                    message
+                }
+            }));
+        }
+        return { success: true, invitationId: invitationData.invitationId };
+    }
+    catch (error) {
+        reply.status(400);
+        return { error: error.message };
+    }
+});
+fastify.post('/api/invitations/game/:id/accept', async (request, reply) => {
+    const authResult = await authenticate(request, reply);
+    if (authResult)
+        return authResult;
+    try {
+        const { id: invitationId } = request.params;
+        const userId = request.userId;
+        // Find the invitation message
+        const messages = await auth.getMessages(userId);
+        const invitationMessage = messages.find(msg => msg.type === 'game_invitation' &&
+            msg.data &&
+            JSON.parse(msg.data).invitationId === invitationId);
+        if (!invitationMessage) {
+            reply.status(404);
+            return { error: 'Invitation not found' };
+        }
+        const invitationData = JSON.parse(invitationMessage.data);
+        // Create a quick match
+        const matchId = require('uuid').v4();
+        const gameType = invitationData.gameType;
+        // Create game
+        const game = {
+            id: matchId,
+            gameType: gameType,
+            players: [],
+            score: { player1: 0, player2: 0 },
+            gameState: 'waiting'
+        };
+        // Initialize game-specific properties
+        if (gameType === 'pong') {
+            game.ball = { x: 50, y: 50, dx: 0.3, dy: 0.3 };
+        }
+        else if (gameType === 'tank') {
+            game.tanks = {};
+            game.bullets = [];
+        }
+        games.set(matchId, game);
+        // Notify both players
+        const sender = players.get(invitationMessage.senderId);
+        const receiver = players.get(userId);
+        if (sender && sender.socket.readyState === 1) {
+            sender.socket.send(JSON.stringify({
+                type: 'game_invitation_accepted',
+                gameId: matchId,
+                message: 'ゲーム招待が受け入れられました！'
+            }));
+        }
+        if (receiver && receiver.socket.readyState === 1) {
+            receiver.socket.send(JSON.stringify({
+                type: 'game_invitation_accepted',
+                gameId: matchId,
+                message: 'ゲーム招待を受け入れました！'
+            }));
+        }
+        return { success: true, gameId: matchId };
+    }
+    catch (error) {
+        reply.status(400);
+        return { error: error.message };
+    }
+});
+fastify.post('/api/invitations/game/:id/decline', async (request, reply) => {
+    const authResult = await authenticate(request, reply);
+    if (authResult)
+        return authResult;
+    try {
+        const { id: invitationId } = request.params;
+        const userId = request.userId;
+        // Find the invitation message
+        const messages = await auth.getMessages(userId);
+        const invitationMessage = messages.find(msg => msg.type === 'game_invitation' &&
+            msg.data &&
+            JSON.parse(msg.data).invitationId === invitationId);
+        if (!invitationMessage) {
+            reply.status(404);
+            return { error: 'Invitation not found' };
+        }
+        // Notify sender
+        const sender = players.get(invitationMessage.senderId);
+        if (sender && sender.socket.readyState === 1) {
+            sender.socket.send(JSON.stringify({
+                type: 'game_invitation_declined',
+                message: 'ゲーム招待が断られました'
+            }));
+        }
+        return { success: true };
+    }
+    catch (error) {
+        reply.status(400);
+        return { error: error.message };
+    }
+});
 // Tournament endpoints
 fastify.post('/api/tournaments', async (request, reply) => {
     const { name, gameType } = request.body;
@@ -415,9 +683,6 @@ fastify.register(async function (fastify) {
 });
 function handleWebSocketMessage(connection, data) {
     switch (data.type) {
-        case 'register_player':
-            handlePlayerRegistration(connection, data);
-            break;
         case 'join_tournament':
             handleJoinTournament(connection, data);
             break;
@@ -439,22 +704,6 @@ function handleWebSocketMessage(connection, data) {
         default:
             connection.socket.send(JSON.stringify({ type: 'error', message: 'Unknown message type' }));
     }
-}
-function handlePlayerRegistration(connection, data) {
-    const player = {
-        id: (0, uuid_1.v4)(),
-        name: data.name,
-        socket: connection.socket,
-        ready: false,
-        position: { x: 0, y: 50 }
-    };
-    players.set(player.id, player);
-    connection.playerId = player.id;
-    console.log(`Player registered: ${player.name} (${player.id}), connection.playerId set to: ${connection.playerId}`);
-    connection.socket.send(JSON.stringify({
-        type: 'player_registered',
-        player: { id: player.id, name: player.name }
-    }));
 }
 function handleJoinTournament(connection, data) {
     const { tournamentId, playerId, playerName } = data;
@@ -516,6 +765,8 @@ function handleStartTournament(connection, data) {
     tournament.status = 'playing';
     generateMatches(tournament);
     console.log(`Tournament started: ${tournament.name}, matches: ${tournament.matches.length}`);
+    // Send system message about tournament start
+    sendTournamentSystemMessage(tournament, `トーナメント「${tournament.name}」が開始されました！`);
     broadcastTournamentUpdate(tournament);
 }
 function generateMatches(tournament) {
@@ -984,6 +1235,59 @@ function broadcastTournamentUpdate(tournament) {
     tournament.players.forEach(player => {
         if (player.socket.readyState === 1) {
             player.socket.send(tournamentData);
+        }
+    });
+    // Send notifications about next matches
+    if (tournament.status === 'playing') {
+        const pendingMatches = tournament.matches.filter(m => m.status === 'pending');
+        pendingMatches.forEach(match => {
+            // Notify both players about their upcoming match
+            if (match.player1.socket.readyState === 1) {
+                match.player1.socket.send(JSON.stringify({
+                    type: 'tournament_match_notification',
+                    message: `あなたの次の試合: ${match.player1.name} vs ${match.player2.name}`,
+                    match: {
+                        id: match.id,
+                        opponent: { id: match.player2.id, name: match.player2.name },
+                        tournament: { id: tournament.id, name: tournament.name }
+                    }
+                }));
+            }
+            if (match.player2.socket.readyState === 1) {
+                match.player2.socket.send(JSON.stringify({
+                    type: 'tournament_match_notification',
+                    message: `あなたの次の試合: ${match.player1.name} vs ${match.player2.name}`,
+                    match: {
+                        id: match.id,
+                        opponent: { id: match.player1.id, name: match.player1.name },
+                        tournament: { id: tournament.id, name: tournament.name }
+                    }
+                }));
+            }
+        });
+    }
+}
+function sendTournamentSystemMessage(tournament, message) {
+    // Send system message to all tournament participants
+    tournament.players.forEach(async (player) => {
+        try {
+            await auth.sendMessage({
+                senderId: 'system',
+                receiverId: player.id,
+                content: message,
+                type: 'system',
+                data: JSON.stringify({ tournamentId: tournament.id, tournamentName: tournament.name })
+            });
+            if (player.socket.readyState === 1) {
+                player.socket.send(JSON.stringify({
+                    type: 'tournament_system_message',
+                    message,
+                    tournament: { id: tournament.id, name: tournament.name }
+                }));
+            }
+        }
+        catch (error) {
+            console.error('Failed to send tournament system message:', error);
         }
     });
 }

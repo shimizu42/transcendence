@@ -21,6 +21,13 @@ exports.addMatchToHistory = addMatchToHistory;
 exports.getMatchHistory = getMatchHistory;
 exports.getUserStats = getUserStats;
 exports.getDefaultAvatars = getDefaultAvatars;
+exports.sendMessage = sendMessage;
+exports.getMessages = getMessages;
+exports.markMessageAsRead = markMessageAsRead;
+exports.getConversations = getConversations;
+exports.blockUser = blockUser;
+exports.unblockUser = unblockUser;
+exports.getBlockedUsers = getBlockedUsers;
 const bcrypt_1 = __importDefault(require("bcrypt"));
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const uuid_1 = require("uuid");
@@ -292,4 +299,138 @@ async function getUserStats(userId) {
 }
 function getDefaultAvatars() {
     return [...DEFAULT_AVATARS];
+}
+// Messaging system (in-memory implementation)
+const messages = new Map(); // messageId -> Message
+const conversations = new Map(); // userId -> messageIds[]
+const blockedUsers = new Map(); // userId -> Set of blocked userIds
+async function sendMessage(data) {
+    const sender = exports.users.get(data.senderId);
+    const receiver = exports.users.get(data.receiverId);
+    if (!sender || !receiver) {
+        throw new Error('User not found');
+    }
+    // Check if sender is blocked by receiver
+    const receiverBlocked = blockedUsers.get(data.receiverId) || new Set();
+    if (receiverBlocked.has(data.senderId)) {
+        throw new Error('You are blocked by this user');
+    }
+    const messageId = (0, uuid_1.v4)();
+    const message = {
+        id: messageId,
+        senderId: data.senderId,
+        receiverId: data.receiverId,
+        content: data.content,
+        type: data.type,
+        data: data.data || undefined,
+        isRead: false,
+        createdAt: new Date(),
+        sender: (await getUserById(data.senderId)) || undefined,
+        receiver: (await getUserById(data.receiverId)) || undefined
+    };
+    messages.set(messageId, message);
+    // Add to conversations
+    const senderConversation = conversations.get(data.senderId) || [];
+    const receiverConversation = conversations.get(data.receiverId) || [];
+    senderConversation.push(messageId);
+    receiverConversation.push(messageId);
+    conversations.set(data.senderId, senderConversation);
+    conversations.set(data.receiverId, receiverConversation);
+    return message;
+}
+async function getMessages(currentUserId, otherUserId) {
+    if (otherUserId) {
+        // Get conversation between two users
+        const userMessages = conversations.get(currentUserId) || [];
+        const conversationMessages = [];
+        for (const messageId of userMessages) {
+            const message = messages.get(messageId);
+            if (message &&
+                ((message.senderId === currentUserId && message.receiverId === otherUserId) ||
+                    (message.senderId === otherUserId && message.receiverId === currentUserId))) {
+                conversationMessages.push(message);
+            }
+        }
+        return conversationMessages.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+    }
+    else {
+        // Get all messages for user
+        const userMessages = conversations.get(currentUserId) || [];
+        const userMessageList = [];
+        for (const messageId of userMessages) {
+            const message = messages.get(messageId);
+            if (message) {
+                userMessageList.push(message);
+            }
+        }
+        return userMessageList.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    }
+}
+async function markMessageAsRead(messageId, userId) {
+    const message = messages.get(messageId);
+    if (!message) {
+        throw new Error('Message not found');
+    }
+    if (message.receiverId !== userId) {
+        throw new Error('Unauthorized');
+    }
+    message.isRead = true;
+}
+async function getConversations(userId) {
+    const userMessages = conversations.get(userId) || [];
+    const conversationMap = new Map();
+    // Group messages by conversation partner
+    for (const messageId of userMessages) {
+        const message = messages.get(messageId);
+        if (message) {
+            const otherUserId = message.senderId === userId ? message.receiverId : message.senderId;
+            if (!conversationMap.has(otherUserId)) {
+                conversationMap.set(otherUserId, []);
+            }
+            conversationMap.get(otherUserId).push(message);
+        }
+    }
+    const userConversations = [];
+    for (const [otherUserId, messagesList] of conversationMap.entries()) {
+        const otherUser = await getUserById(otherUserId);
+        if (otherUser && messagesList.length > 0) {
+            const sortedMessages = messagesList.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+            const lastMessage = sortedMessages[0];
+            const unreadCount = messagesList.filter(msg => msg.receiverId === userId && !msg.isRead).length;
+            userConversations.push({
+                userId: otherUserId,
+                user: otherUser,
+                lastMessage,
+                unreadCount
+            });
+        }
+    }
+    return userConversations.sort((a, b) => b.lastMessage.createdAt.getTime() - a.lastMessage.createdAt.getTime());
+}
+// Blocking system functions
+async function blockUser(userId, blockedId) {
+    const user = exports.users.get(userId);
+    const blocked = exports.users.get(blockedId);
+    if (!user || !blocked) {
+        throw new Error('User not found');
+    }
+    const userBlocked = blockedUsers.get(userId) || new Set();
+    userBlocked.add(blockedId);
+    blockedUsers.set(userId, userBlocked);
+}
+async function unblockUser(userId, blockedId) {
+    const userBlocked = blockedUsers.get(userId) || new Set();
+    userBlocked.delete(blockedId);
+    blockedUsers.set(userId, userBlocked);
+}
+async function getBlockedUsers(userId) {
+    const userBlocked = blockedUsers.get(userId) || new Set();
+    const blocked = [];
+    for (const blockedId of userBlocked) {
+        const user = await getUserById(blockedId);
+        if (user) {
+            blocked.push(user);
+        }
+    }
+    return blocked;
 }

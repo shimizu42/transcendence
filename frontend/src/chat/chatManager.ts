@@ -294,7 +294,7 @@ export class ChatManager {
               Pongゲームに招待
             </button>
             <button onclick="app.sendGameInvite('tank')" class="w-full px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">
-              Tank Battleに招待
+              Tankに招待
             </button>
             <button onclick="app.closeGameInviteModal()" class="w-full px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700">
               キャンセル
