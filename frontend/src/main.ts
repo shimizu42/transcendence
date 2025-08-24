@@ -4,6 +4,7 @@ import { GameManager } from './game/gameManager'
 import { TournamentManager } from './tournament/tournamentManager'
 import { AuthManager } from './auth/authManager'
 import { ChatManager } from './chat/chatManager'
+import { DashboardManager } from './dashboard/dashboardManager'
 
 class App {
   private spa: SPA
@@ -11,6 +12,7 @@ class App {
   private tournamentManager: TournamentManager
   private authManager: AuthManager
   private chatManager: ChatManager
+  private dashboardManager: DashboardManager
   private ws: WebSocket | null = null
   private playerId: string | null = null
   private playerName: string | null = null
@@ -23,6 +25,7 @@ class App {
     this.tournamentManager = new TournamentManager()
     this.authManager = new AuthManager()
     this.chatManager = new ChatManager(this.authManager, this.ws)
+    this.dashboardManager = new DashboardManager(this.authManager)
     
     // Listen for user-loaded event to re-render when user info is available
     window.addEventListener('user-loaded', () => {
@@ -46,6 +49,8 @@ class App {
     this.spa.addRoute('/profile', () => this.renderProfile())
     this.spa.addRoute('/friends', () => this.renderFriends())
     this.spa.addRoute('/stats', () => this.renderStats())
+    this.spa.addRoute('/dashboard', () => this.renderDashboard())
+    this.spa.addRoute('/analytics', () => this.renderAnalytics())
     this.spa.addRoute('/chat', () => this.renderChatPage())
     this.spa.addRoute('/tournaments', () => this.renderTournaments())
     this.spa.addRoute('/tournament/:id', (params) => this.renderTournament(params.id))
@@ -175,6 +180,7 @@ class App {
             <div class="flex space-x-4 p-4">
               <button onclick="app.navigateTo('/profile')" class="btn btn-secondary">プロフィール</button>
               <button onclick="app.navigateTo('/friends')" class="btn btn-secondary">友達</button>
+              <button onclick="app.navigateTo('/dashboard')" class="btn btn-secondary">ダッシュボード</button>
               <button onclick="app.navigateTo('/stats')" class="btn btn-secondary">統計</button>
               <button onclick="app.navigateTo('/chat')" class="btn btn-secondary">チャット</button>
               <button onclick="app.navigateTo('/tournaments')" class="btn btn-primary">トーナメント</button>
@@ -1383,6 +1389,452 @@ class App {
     setTimeout(() => {
       this.openConversation(userId)
     }, 200)
+  }
+
+  // Dashboard rendering methods
+  private renderDashboard(): string {
+    const user = this.authManager.getCurrentUser()
+    if (!user) {
+      return this.redirectToLogin()
+    }
+
+    setTimeout(() => this.loadDashboardData(), 100)
+
+    return `
+      <div class="game-container">
+        <div class="max-w-7xl mx-auto">
+          <div class="flex justify-between items-center mb-6">
+            <h2 class="text-3xl font-bold text-neon-cyan">ダッシュボード</h2>
+            <div class="flex space-x-2">
+              <button onclick="app.navigateTo('/dashboard')" class="btn btn-primary btn-sm">概要</button>
+              <button onclick="app.navigateTo('/analytics')" class="btn btn-secondary btn-sm">詳細分析</button>
+            </div>
+          </div>
+          
+          <!-- Dashboard Content -->
+          <div id="dashboard-content">
+            <div class="text-center text-gray-400 py-8">
+              <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-neon-cyan mx-auto mb-2"></div>
+              データを読み込み中...
+            </div>
+          </div>
+
+          <div class="text-center mt-6">
+            <button onclick="app.navigateTo('/')" class="btn btn-secondary">戻る</button>
+          </div>
+        </div>
+      </div>
+    `
+  }
+
+  private renderAnalytics(): string {
+    const user = this.authManager.getCurrentUser()
+    if (!user) {
+      return this.redirectToLogin()
+    }
+
+    setTimeout(() => this.loadAnalyticsData(), 100)
+
+    return `
+      <div class="game-container">
+        <div class="max-w-7xl mx-auto">
+          <div class="flex justify-between items-center mb-6">
+            <h2 class="text-3xl font-bold text-neon-cyan">詳細分析</h2>
+            <div class="flex space-x-2">
+              <button onclick="app.navigateTo('/dashboard')" class="btn btn-secondary btn-sm">概要</button>
+              <button onclick="app.navigateTo('/analytics')" class="btn btn-primary btn-sm">詳細分析</button>
+            </div>
+          </div>
+          
+          <!-- Analytics Content -->
+          <div id="analytics-content">
+            <div class="text-center text-gray-400 py-8">
+              <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-neon-cyan mx-auto mb-2"></div>
+              データを読み込み中...
+            </div>
+          </div>
+
+          <div class="text-center mt-6">
+            <button onclick="app.navigateTo('/')" class="btn btn-secondary">戻る</button>
+          </div>
+        </div>
+      </div>
+    `
+  }
+
+  private async loadDashboardData() {
+    try {
+      const dashboardData = await this.dashboardManager.getDashboardData()
+      
+      const content = `
+        <!-- Key Metrics Cards -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+          <div class="bg-game-text border border-neon-blue rounded-lg p-4">
+            <div class="flex items-center">
+              <div class="p-3 rounded-full bg-green-500 bg-opacity-20">
+                <span class="text-2xl">🏆</span>
+              </div>
+              <div class="ml-4">
+                <p class="text-sm text-gray-400">勝利</p>
+                <p class="text-2xl font-bold text-white">${dashboardData.statistics.wins}</p>
+              </div>
+            </div>
+          </div>
+          
+          <div class="bg-game-text border border-neon-blue rounded-lg p-4">
+            <div class="flex items-center">
+              <div class="p-3 rounded-full bg-blue-500 bg-opacity-20">
+                <span class="text-2xl">📊</span>
+              </div>
+              <div class="ml-4">
+                <p class="text-sm text-gray-400">勝率</p>
+                <p class="text-2xl font-bold text-white">${dashboardData.statistics.winRate}%</p>
+              </div>
+            </div>
+          </div>
+          
+          <div class="bg-game-text border border-neon-blue rounded-lg p-4">
+            <div class="flex items-center">
+              <div class="p-3 rounded-full bg-purple-500 bg-opacity-20">
+                <span class="text-2xl">🎮</span>
+              </div>
+              <div class="ml-4">
+                <p class="text-sm text-gray-400">総試合数</p>
+                <p class="text-2xl font-bold text-white">${dashboardData.statistics.totalGames}</p>
+              </div>
+            </div>
+          </div>
+          
+          <div class="bg-game-text border border-neon-blue rounded-lg p-4">
+            <div class="flex items-center">
+              <div class="p-3 rounded-full bg-orange-500 bg-opacity-20">
+                <span class="text-2xl">🔥</span>
+              </div>
+              <div class="ml-4">
+                <p class="text-sm text-gray-400">最長連勝</p>
+                <p class="text-2xl font-bold text-white">${dashboardData.statistics.longestWinStreak || 0}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Charts Section -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+          <!-- Performance Over Time -->
+          <div id="performance-chart">
+            ${dashboardData.statistics.performanceOverTime ? 
+              this.dashboardManager.renderLineChart(
+                dashboardData.statistics.performanceOverTime.map(p => ({ x: p.date, y: p.winRate })),
+                { title: 'パフォーマンス推移 (勝率%)', color: '#10B981', width: 500, height: 250 }
+              ) : 
+              '<div class="bg-game-text border border-neon-blue rounded-lg p-4"><p class="text-gray-400 text-center">データが不足しています</p></div>'
+            }
+          </div>
+          
+          <!-- Game Type Stats -->
+          <div id="game-type-chart">
+            ${dashboardData.statistics.gameTypeStats ? 
+              this.dashboardManager.renderPieChart([
+                { label: 'Pong', value: dashboardData.statistics.gameTypeStats.pong.totalGames, color: '#3B82F6' },
+                { label: 'Tank', value: dashboardData.statistics.gameTypeStats.tank.totalGames, color: '#EF4444' }
+              ], { title: 'ゲームタイプ別試合数', width: 400, height: 200 }) :
+              '<div class="bg-game-text border border-neon-blue rounded-lg p-4"><p class="text-gray-400 text-center">データが不足しています</p></div>'
+            }
+          </div>
+        </div>
+
+        <!-- Insights Section -->
+        ${dashboardData.insights && dashboardData.insights.length > 0 ? `
+          <div class="bg-game-text border border-neon-blue rounded-lg p-6 mb-8">
+            <h3 class="text-xl font-bold text-neon-cyan mb-4">インサイト</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              ${dashboardData.insights.map(insight => `
+                <div class="flex items-start space-x-3 p-3 bg-game-bg rounded-lg border ${
+                  insight.type === 'improvement' ? 'border-green-500' :
+                  insight.type === 'achievement' ? 'border-blue-500' :
+                  insight.type === 'trend' ? 'border-purple-500' :
+                  'border-yellow-500'
+                }">
+                  <div class="text-2xl">
+                    ${insight.type === 'improvement' ? '📈' :
+                      insight.type === 'achievement' ? '🏆' :
+                      insight.type === 'trend' ? '📊' : '💡'}
+                  </div>
+                  <div>
+                    <h4 class="font-bold text-white">${insight.title}</h4>
+                    <p class="text-sm text-gray-300">${insight.description}</p>
+                    ${insight.value ? `<span class="text-neon-cyan font-mono text-sm">${insight.value}</span>` : ''}
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        ` : ''}
+
+        <!-- Achievements Section -->
+        ${dashboardData.achievements && dashboardData.achievements.length > 0 ? `
+          <div class="bg-game-text border border-neon-blue rounded-lg p-6 mb-8">
+            <h3 class="text-xl font-bold text-neon-cyan mb-4">実績</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              ${dashboardData.achievements.map(achievement => `
+                <div class="flex items-center space-x-3 p-3 bg-game-bg rounded-lg border border-yellow-500">
+                  <div class="text-3xl">${achievement.icon}</div>
+                  <div class="flex-1">
+                    <h4 class="font-bold text-white">${achievement.name}</h4>
+                    <p class="text-xs text-gray-300">${achievement.description}</p>
+                    <div class="mt-1">
+                      <div class="bg-gray-700 rounded-full h-2">
+                        <div class="bg-yellow-500 h-2 rounded-full" style="width: ${(achievement.progress / achievement.maxProgress) * 100}%"></div>
+                      </div>
+                      <span class="text-xs text-gray-400">${achievement.progress}/${achievement.maxProgress}</span>
+                    </div>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        ` : ''}
+
+        <!-- Recent Matches -->
+        <div class="bg-game-text border border-neon-blue rounded-lg p-6">
+          <h3 class="text-xl font-bold text-neon-cyan mb-4">最近の試合</h3>
+          <div class="space-y-3">
+            ${dashboardData.recentMatches.slice(0, 5).map(match => {
+              const isWin = match.winnerId === dashboardData.user.id
+              const isPlayer1 = match.player1Id === dashboardData.user.id
+              const opponentScore = isPlayer1 ? match.score.player2 : match.score.player1
+              const userScore = isPlayer1 ? match.score.player1 : match.score.player2
+              const date = new Date(match.playedAt).toLocaleDateString('ja-JP')
+              
+              return `
+                <div class="flex items-center justify-between p-3 bg-game-bg rounded-lg">
+                  <div class="flex items-center space-x-4">
+                    <div class="text-2xl">${match.gameType === 'pong' ? '🏓' : '🚗'}</div>
+                    <div>
+                      <p class="font-medium text-white">${match.gameType === 'pong' ? 'Pong' : 'Tank Battle'}</p>
+                      <p class="text-sm text-gray-400">${date}</p>
+                    </div>
+                  </div>
+                  <div class="text-center">
+                    <p class="font-mono text-lg ${isWin ? 'text-green-400' : 'text-red-400'}">
+                      ${userScore} - ${opponentScore}
+                    </p>
+                    <p class="text-xs ${isWin ? 'text-green-400' : 'text-red-400'}">
+                      ${isWin ? '勝利' : '敗北'}
+                    </p>
+                  </div>
+                </div>
+              `
+            }).join('')}
+          </div>
+        </div>
+      `
+      
+      const dashboardContent = document.getElementById('dashboard-content')
+      if (dashboardContent) {
+        dashboardContent.innerHTML = content
+      }
+    } catch (error) {
+      console.error('Failed to load dashboard data:', error)
+      const dashboardContent = document.getElementById('dashboard-content')
+      if (dashboardContent) {
+        dashboardContent.innerHTML = `
+          <div class="text-center text-red-400 py-8">
+            <p>ダッシュボードデータの読み込みに失敗しました</p>
+          </div>
+        `
+      }
+    }
+  }
+
+  private async loadAnalyticsData() {
+    try {
+      const dashboardData = await this.dashboardManager.getDashboardData()
+      
+      const content = `
+        <!-- Daily Activity Chart -->
+        <div class="mb-8">
+          ${dashboardData.statistics.gamesPerDay ? 
+            this.dashboardManager.renderBarChart(
+              dashboardData.statistics.gamesPerDay.slice(-14).map(d => ({ 
+                label: new Date(d.date).toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric' }), 
+                value: d.games 
+              })),
+              { title: '過去2週間の試合数', color: '#8B5CF6', width: 800, height: 300 }
+            ) : 
+            '<div class="bg-game-text border border-neon-blue rounded-lg p-4"><p class="text-gray-400 text-center">データが不足しています</p></div>'
+          }
+        </div>
+
+        <!-- Detailed Game Type Analysis -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+          ${dashboardData.statistics.gameTypeStats ? `
+            <!-- Pong Stats -->
+            <div class="bg-game-text border border-neon-blue rounded-lg p-6">
+              <h3 class="text-xl font-bold text-blue-400 mb-4">🏓 Pong統計</h3>
+              <div class="space-y-4">
+                <div class="flex justify-between">
+                  <span class="text-gray-300">総試合数:</span>
+                  <span class="text-white font-bold">${dashboardData.statistics.gameTypeStats.pong.totalGames}</span>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-gray-300">勝率:</span>
+                  <span class="text-white font-bold">${dashboardData.statistics.gameTypeStats.pong.winRate}%</span>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-gray-300">平均得点:</span>
+                  <span class="text-white font-bold">${dashboardData.statistics.gameTypeStats.pong.averageScore?.toFixed(1) || 'N/A'}</span>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-gray-300">最高得点:</span>
+                  <span class="text-white font-bold">${dashboardData.statistics.gameTypeStats.pong.bestScore || 'N/A'}</span>
+                </div>
+                <div class="bg-blue-500 bg-opacity-20 rounded-full h-4">
+                  <div class="bg-blue-500 h-4 rounded-full" style="width: ${dashboardData.statistics.gameTypeStats.pong.winRate}%"></div>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Tank Stats -->
+            <div class="bg-game-text border border-neon-blue rounded-lg p-6">
+              <h3 class="text-xl font-bold text-red-400 mb-4">🚗 Tank Battle統計</h3>
+              <div class="space-y-4">
+                <div class="flex justify-between">
+                  <span class="text-gray-300">総試合数:</span>
+                  <span class="text-white font-bold">${dashboardData.statistics.gameTypeStats.tank.totalGames}</span>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-gray-300">勝率:</span>
+                  <span class="text-white font-bold">${dashboardData.statistics.gameTypeStats.tank.winRate}%</span>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-gray-300">平均得点:</span>
+                  <span class="text-white font-bold">${dashboardData.statistics.gameTypeStats.tank.averageScore?.toFixed(1) || 'N/A'}</span>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-gray-300">最高得点:</span>
+                  <span class="text-white font-bold">${dashboardData.statistics.gameTypeStats.tank.bestScore || 'N/A'}</span>
+                </div>
+                <div class="bg-red-500 bg-opacity-20 rounded-full h-4">
+                  <div class="bg-red-500 h-4 rounded-full" style="width: ${dashboardData.statistics.gameTypeStats.tank.winRate}%"></div>
+                </div>
+              </div>
+            </div>
+          ` : ''}
+        </div>
+
+        <!-- Detailed Match History -->
+        <div class="bg-game-text border border-neon-blue rounded-lg p-6">
+          <div class="flex justify-between items-center mb-4">
+            <h3 class="text-xl font-bold text-neon-cyan">詳細試合履歴</h3>
+            <div class="flex space-x-2">
+              <select id="match-filter" onchange="app.filterMatches(this.value)" class="bg-game-bg border border-neon-blue rounded px-3 py-1 text-white text-sm">
+                <option value="all">全て</option>
+                <option value="pong">Pong</option>
+                <option value="tank">Tank</option>
+                <option value="wins">勝利のみ</option>
+                <option value="losses">敗北のみ</option>
+              </select>
+            </div>
+          </div>
+          
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead>
+                <tr class="border-b border-neon-blue">
+                  <th class="text-left py-2 text-neon-cyan">日時</th>
+                  <th class="text-left py-2 text-neon-cyan">ゲーム</th>
+                  <th class="text-left py-2 text-neon-cyan">結果</th>
+                  <th class="text-left py-2 text-neon-cyan">スコア</th>
+                  <th class="text-left py-2 text-neon-cyan">時間</th>
+                  <th class="text-left py-2 text-neon-cyan">トーナメント</th>
+                </tr>
+              </thead>
+              <tbody id="match-history-table">
+                ${dashboardData.recentMatches.map(match => {
+                  const isWin = match.winnerId === dashboardData.user.id
+                  const isPlayer1 = match.player1Id === dashboardData.user.id
+                  const opponentScore = isPlayer1 ? match.score.player2 : match.score.player1
+                  const userScore = isPlayer1 ? match.score.player1 : match.score.player2
+                  const date = new Date(match.playedAt).toLocaleDateString('ja-JP')
+                  const time = new Date(match.playedAt).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })
+                  
+                  return `
+                    <tr class="border-b border-gray-700 hover:bg-game-bg" data-game-type="${match.gameType}" data-result="${isWin ? 'win' : 'loss'}">
+                      <td class="py-3 text-gray-300">${date} ${time}</td>
+                      <td class="py-3">
+                        <span class="inline-flex items-center space-x-1">
+                          <span>${match.gameType === 'pong' ? '🏓' : '🚗'}</span>
+                          <span class="text-white">${match.gameType === 'pong' ? 'Pong' : 'Tank'}</span>
+                        </span>
+                      </td>
+                      <td class="py-3">
+                        <span class="px-2 py-1 rounded text-xs font-bold ${isWin ? 'bg-green-500 text-white' : 'bg-red-500 text-white'}">
+                          ${isWin ? '勝利' : '敗北'}
+                        </span>
+                      </td>
+                      <td class="py-3 font-mono ${isWin ? 'text-green-400' : 'text-red-400'}">${userScore} - ${opponentScore}</td>
+                      <td class="py-3 text-gray-300">${match.duration ? `${Math.floor(match.duration / 60)}:${String(match.duration % 60).padStart(2, '0')}` : '-'}</td>
+                      <td class="py-3 text-gray-300">${match.tournamentName || '-'}</td>
+                    </tr>
+                  `
+                }).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `
+      
+      const analyticsContent = document.getElementById('analytics-content')
+      if (analyticsContent) {
+        analyticsContent.innerHTML = content
+      }
+    } catch (error) {
+      console.error('Failed to load analytics data:', error)
+      const analyticsContent = document.getElementById('analytics-content')
+      if (analyticsContent) {
+        analyticsContent.innerHTML = `
+          <div class="text-center text-red-400 py-8">
+            <p>分析データの読み込みに失敗しました</p>
+          </div>
+        `
+      }
+    }
+  }
+
+  public filterMatches(filter: string) {
+    const rows = document.querySelectorAll('#match-history-table tr')
+    
+    rows.forEach(row => {
+      const gameType = row.getAttribute('data-game-type')
+      const result = row.getAttribute('data-result')
+      let show = true
+      
+      switch (filter) {
+        case 'pong':
+          show = gameType === 'pong'
+          break
+        case 'tank':
+          show = gameType === 'tank'
+          break
+        case 'wins':
+          show = result === 'win'
+          break
+        case 'losses':
+          show = result === 'loss'
+          break
+        case 'all':
+        default:
+          show = true
+          break
+      }
+      
+      if (show) {
+        (row as HTMLElement).style.display = ''
+      } else {
+        (row as HTMLElement).style.display = 'none'
+      }
+    })
   }
 }
 
