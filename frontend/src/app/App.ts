@@ -9,6 +9,7 @@ export class App {
   private wsService: WebSocketService;
   private currentUser: User | null = null;
   private currentGame: PongGame | null = null;
+  private resizeHandler: (() => void) | null = null;
 
   constructor() {
     this.container = document.getElementById('app')!;
@@ -65,33 +66,56 @@ export class App {
 
   private async startGame(gameId: string): Promise<void> {
     this.container.innerHTML = `
-      <div class="min-h-screen bg-gray-900 p-4">
-        <div class="max-w-6xl mx-auto">
-          <div class="bg-gray-800 rounded-lg p-4 mb-4">
-            <div class="flex justify-between items-center">
-              <h1 class="text-2xl font-bold text-white">Pong Game</h1>
-              <div id="game-score" class="text-xl text-white">
-                Waiting for game to start...
-              </div>
-              <button id="leave-game" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded">
-                Leave Game
-              </button>
+      <div class="fixed inset-0 bg-gray-900 flex flex-col">
+        <div class="bg-gray-800 p-4 shadow-lg">
+          <div class="flex justify-between items-center">
+            <h1 class="text-2xl font-bold text-white">Pong Game</h1>
+            <div id="game-score" class="text-xl text-white">
+              Waiting for game to start...
             </div>
+            <button id="leave-game" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded">
+              Leave Game
+            </button>
           </div>
-          
-          <div class="bg-gray-800 rounded-lg p-4">
-            <canvas id="game-canvas" class="w-full h-96"></canvas>
-            <div class="mt-4 text-center text-gray-300">
-              <p>Use W/S or Arrow Keys to move your paddle</p>
-            </div>
+        </div>
+        
+        <div class="flex-1 flex flex-col items-center justify-center p-4">
+          <canvas id="game-canvas" class="w-full h-full max-w-none max-h-none bg-black rounded-lg shadow-2xl"></canvas>
+          <div class="absolute bottom-4 text-center text-gray-300 bg-black bg-opacity-50 px-4 py-2 rounded">
+            <p>Use W/S or Arrow Keys to move your paddle</p>
           </div>
         </div>
       </div>
     `;
 
     const canvas = document.getElementById('game-canvas') as unknown as HTMLCanvasElement;
-    canvas.width = 1200;
-    canvas.height = 600;
+    
+    // Set canvas size to match available space
+    const resizeCanvas = () => {
+      const container = canvas.parentElement!;
+      const containerRect = container.getBoundingClientRect();
+      
+      // Calculate available space (minus padding)
+      const availableWidth = containerRect.width - 32; // 16px padding on each side
+      const availableHeight = containerRect.height - 32;
+      
+      // Maintain aspect ratio (2:1)
+      const aspectRatio = 2;
+      let canvasWidth = availableWidth;
+      let canvasHeight = canvasWidth / aspectRatio;
+      
+      if (canvasHeight > availableHeight) {
+        canvasHeight = availableHeight;
+        canvasWidth = canvasHeight * aspectRatio;
+      }
+      
+      canvas.width = canvasWidth;
+      canvas.height = canvasHeight;
+    };
+    
+    resizeCanvas();
+    this.resizeHandler = resizeCanvas;
+    window.addEventListener('resize', this.resizeHandler);
 
     this.currentGame = new PongGame(
       canvas,
@@ -114,6 +138,13 @@ export class App {
       this.currentGame.dispose();
       this.currentGame = null;
     }
+    
+    // Clean up resize event listener
+    if (this.resizeHandler) {
+      window.removeEventListener('resize', this.resizeHandler);
+      this.resizeHandler = null;
+    }
+    
     this.showUserList();
   }
 }
