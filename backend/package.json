@@ -1,0 +1,24 @@
+{
+  "name": "transcendence-backend",
+  "version": "1.0.0",
+  "description": "Backend for 3D Pong game",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@fastify/websocket": "^10.0.1",
+    "@types/jsonwebtoken": "^9.0.10",
+    "fastify": "^4.24.3",
+    "jsonwebtoken": "^9.0.2",
+    "ws": "^8.14.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.8.6",
+    "@types/ws": "^8.5.8",
+    "tsx": "^4.1.2",
+    "typescript": "^5.2.2"
+  }
+}
