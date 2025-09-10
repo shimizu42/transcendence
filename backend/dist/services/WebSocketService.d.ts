@@ -13,6 +13,8 @@ export declare class WebSocketService {
     private handleGameInviteResponse;
     private handleJoinGame;
     private handlePaddleMove;
+    private handleJoinQueue4Player;
+    private handleLeaveQueue4Player;
     private handleLeaveGame;
     private handleDisconnection;
     private startGameStateUpdates;

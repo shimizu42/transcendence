@@ -82,7 +82,11 @@ export class App {
         <div class="flex-1 flex flex-col items-center justify-center p-4">
           <canvas id="game-canvas" class="w-full h-full max-w-none max-h-none bg-black rounded-lg shadow-2xl"></canvas>
           <div class="absolute bottom-4 text-center text-gray-300 bg-black bg-opacity-50 px-4 py-2 rounded">
-            <p>Use W/S or Arrow Keys to move your paddle</p>
+            <div class="text-sm">
+              <p><strong>Controls:</strong></p>
+              <p>2-Player: W/S or ↑/↓ to move paddle</p>
+              <p>4-Player: W/A/S/D or Arrow Keys to move paddle</p>
+            </div>
           </div>
         </div>
       </div>

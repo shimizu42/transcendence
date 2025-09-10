@@ -1,16 +1,16 @@
+export interface Player {
+  id: string;
+  username: string;
+  score: number;
+  lives: number;
+  paddlePosition: number;
+  isAlive: boolean;
+  side: 'top' | 'bottom' | 'left' | 'right';
+}
+
 export interface GameState {
-  player1: {
-    id: string;
-    username: string;
-    score: number;
-    paddleY: number;
-  };
-  player2: {
-    id: string;
-    username: string;
-    score: number;
-    paddleY: number;
-  };
+  gameType: '2player' | '4player';
+  players: { [key: string]: Player };
   ball: {
     x: number;
     y: number;
@@ -21,9 +21,10 @@ export interface GameState {
   };
   gameStatus: 'waiting' | 'playing' | 'finished';
   winner?: string;
+  alivePlayers: string[];
 }
 
 export interface GameUpdate {
-  type: 'paddle' | 'ball' | 'score' | 'gameEnd';
+  type: 'paddle' | 'ball' | 'score' | 'playerEliminated' | 'gameEnd';
   data: any;
 }
