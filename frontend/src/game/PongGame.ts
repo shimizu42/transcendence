@@ -2,6 +2,13 @@ import { Engine, Scene, ArcRotateCamera, HemisphericLight, Vector3, MeshBuilder,
 import { WebSocketService } from '../services/WebSocketService';
 import { GameState } from '../types/Game';
 
+type GameEndPayload = {
+  winner: string | 1 | 2;
+  score: string;
+  p1: number;
+  p2: number;
+};
+
 export class PongGame {
   private canvas: HTMLCanvasElement;
   private engine: Engine;
@@ -10,20 +17,52 @@ export class PongGame {
   private wsService: WebSocketService;
   private gameId: string;
   private gameState: GameState | null = null;
-  private onGameEnd: () => void;
+  private onGameEnd: (winner: string, score: string) => void;
 
+  private ended: boolean = false;
+  private onGameEndMsg = (data: GameEndPayload) => {
+    if (this.ended) return;
+    this.ended = true;
+
+    let winnerName: string;
+    if (typeof data.winner === 'string') {
+      winnerName = data.winner.length ? data.winner : 'Unknown';
+    } else {
+      winnerName =
+       data.winner === 1
+        ? (this.gameState?.player1.username ?? 'Player 1')
+        : (this.gameState?.player2.username ?? 'Player 2');
+    }
+
+    let finalScore: string;
+    if (data.score){
+      finalScore = data.score;
+    } else if (data.p1 != null && data.p2 != null) {
+      finalScore = `${data.p1} - ${data.p2}`;
+    } else {
+      let baseP1 = this.lastScoreBeforeEnd ? this.lastScoreBeforeEnd.p1 : (this.gameState?.player1.score ?? 0);
+      let baseP2 = this.lastScoreBeforeEnd ? this.lastScoreBeforeEnd.p2 : (this.gameState?.player2.score ?? 0);
+      if (winnerName === (this.gameState?.player1.username ?? 'Player 1'))
+        baseP1 += 1;
+      else
+        baseP2 += 1;
+      finalScore = `${baseP1} - ${baseP2}`;
+    }
+      
+    this.onGameEnd(winnerName, finalScore);
+  };
+  private lastScoreBeforeEnd: { p1: number; p2: number } | null = null;
   private ball: any;
   private paddle1: any;
   private paddle2: any;
 
-  constructor(canvas: HTMLCanvasElement, wsService: WebSocketService, gameId: string, _currentUser: any, onGameEnd: () => void) {
+  constructor(canvas: HTMLCanvasElement, wsService: WebSocketService, gameId: string, _currentUser: any, onGameEnd: (winner: string, score:string) => void) {
     this.canvas = canvas;
     this.engine = new Engine(canvas, true);
     this.scene = new Scene(this.engine);
     this.wsService = wsService;
     this.gameId = gameId;
     this.onGameEnd = onGameEnd;
-    
     this.camera = new ArcRotateCamera('camera', 0, Math.PI / 3, 20, Vector3.Zero(), this.scene);
   }
 
@@ -128,18 +167,16 @@ export class PongGame {
   }
 
   private setupWebSocketListeners(): void {
-    this.wsService.on('gameState', (state: GameState) => {
-      this.gameState = state;
-      this.updateGameObjects();
-      
-      if (state.gameStatus === 'finished') {
-        this.showGameEndModal(state.winner!);
-      }
-    });
+    this.wsService.on('gameState', this.onGameStateMsg);
+    this.wsService.on('gameEnd', this.onGameEndMsg);
+  }
 
-    this.wsService.on('playerAssignment', (_data: { playerId: string; playerNumber: number }) => {
-      // Player assignment handled
-    });
+  private onGameStateMsg = (state: GameState) => {
+    this.gameState = state;
+    if (state.gameStatus !== 'finished') {
+      this.lastScoreBeforeEnd = { p1: state.player1.score, p2: state.player2.score };
+    }
+    this.updateGameObjects();
   }
 
   private updateGameObjects(): void {
@@ -164,28 +201,10 @@ export class PongGame {
     }
   }
 
-  private showGameEndModal(winner: string): void {
-    const modal = document.createElement('div');
-    modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center';
-    modal.innerHTML = `
-      <div class="bg-gray-800 p-8 rounded-lg text-center">
-        <h2 class="text-2xl font-bold text-white mb-4">Game Over!</h2>
-        <p class="text-xl text-gray-300 mb-6">${winner} wins!</p>
-        <button id="back-to-lobby" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded">
-          Back to Lobby
-        </button>
-      </div>
-    `;
-
-    document.body.appendChild(modal);
-
-    document.getElementById('back-to-lobby')!.addEventListener('click', () => {
-      document.body.removeChild(modal);
-      this.onGameEnd();
-    });
-  }
-
   dispose(): void {
+    this.wsService.off('gameEnd', this.onGameEndMsg);
+    this.camera.detachControl();
     this.engine.dispose();
+    
   }
 }

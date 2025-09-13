@@ -3,6 +3,7 @@ import { UserList } from '../components/UserList';
 import { PongGame } from '../game/PongGame';
 import { WebSocketService } from '../services/WebSocketService';
 import { User } from '../types/User';
+import { ResultScreen } from '../game/Result';
 
 export class App {
   private container: HTMLElement;
@@ -122,7 +123,7 @@ export class App {
       this.wsService,
       gameId,
       this.currentUser,
-      () => this.endGame()
+      (winner: string, score: string) => this.endGame(winner, score)
     );
 
     await this.currentGame.init();
@@ -133,7 +134,7 @@ export class App {
     });
   }
 
-  private endGame(): void {
+  private endGame(winner?: string, score?: string) {
     if (this.currentGame) {
       this.currentGame.dispose();
       this.currentGame = null;
@@ -144,7 +145,13 @@ export class App {
       window.removeEventListener('resize', this.resizeHandler);
       this.resizeHandler = null;
     }
-    
-    this.showUserList();
+
+    const resultScreen = new ResultScreen( 
+      this.container, 
+      winner ?? 'Unknown',
+      score ?? '0 - 0',
+      () => this.showUserList()
+    );
+    resultScreen.render();
   }
 }

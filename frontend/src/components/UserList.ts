@@ -99,7 +99,7 @@ export class UserList {
 
   private renderUserList(): void {
     const userListContainer = document.getElementById('user-list')!;
-    
+    if (!userListContainer) return; 
     const otherUsers = this.users.filter(user => user.id !== this.currentUser.id);
     
     if (otherUsers.length === 0) {

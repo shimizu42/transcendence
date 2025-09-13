@@ -76,11 +76,17 @@ export class WebSocketService {
   private handleMessage(message: { type: string; data: any }): void {
     console.log('WebSocket: Received message', message);
     const handlers = this.messageHandlers.get(message.type);
-    if (handlers) {
-      console.log(`WebSocket: Found ${handlers.length} handler(s) for message type: ${message.type}`);
-      handlers.forEach(handler => handler(message.data));
-    } else {
-      console.warn(`WebSocket: No handlers found for message type: ${message.type}`);
+    if (!handlers || handlers.length === 0) {
+      console.warn('WebSocket: No handlers for message type', message.type);
+      return;
+    }
+
+    for (const h of [...handlers]) {
+      try {
+        h(message.data);
+      } catch (error) {
+        console.error('WebSocket: Error in handler for message type', message.type, error);
+      }
     }
   }
 }
