@@ -1,0 +1,23 @@
+FROM golang:1.22-alpine AS build
+
+WORKDIR /src
+
+
+RUN apk add --no-cache ca-certificates && update-ca-certificates
+
+COPY devops/go.mod devops/go.sum ./
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod download
+
+COPY devops/ ./
+
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=linux go build -o /out/exporter ./main.go
+
+FROM gcr.io/distroless/static:nonroot
+ENV BACKEND_URL=http://backend:3001
+ENV WS_URL=ws://backend:3001/ws
+EXPOSE 9101
+COPY --from=build /out/exporter /exporter
+ENTRYPOINT ["/exporter"]

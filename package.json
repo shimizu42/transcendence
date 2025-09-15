@@ -12,10 +12,18 @@
     "build:backend": "cd backend && npm run build",
     "start": "cd backend && npm start"
   },
-  "keywords": ["pong", "3d", "multiplayer", "babylon.js"],
+  "keywords": [
+    "pong",
+    "3d",
+    "multiplayer",
+    "babylon.js"
+  ],
   "author": "",
   "license": "ISC",
   "devDependencies": {
     "concurrently": "^8.2.2"
+  },
+  "dependencies": {
+    "jsonwebtoken": "^9.0.2"
   }
 }

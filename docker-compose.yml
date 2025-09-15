@@ -18,3 +18,28 @@ services:
       - "3001:3001"
     environment:
       - NODE_ENV=production
+
+  exporter:
+    build: 
+      context: .
+      dockerfile: Dockerfile.devops
+    environment:
+      BACKEND_URL: "http://backend:3001"
+      WS_URL: "ws://backend:3001"
+      API_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6ImV4cG9ydGVyIiwidXNlcm5hbWUiOiJleHBvcnRlciIsImlhdCI6MTc1NzkyODAyNywiZXhwIjoxNzU4MDE0NDI3fQ.5kHvArJSBEkEKHv1gvG0a9TYNUvwnH-CZvecrTuRqaw"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - ./devops/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+    depends_on:
+      - exporter
+    restart: unless-stopped
+
+

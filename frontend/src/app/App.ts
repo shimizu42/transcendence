@@ -134,7 +134,7 @@ export class App {
     });
   }
 
-  private endGame(winner?: string, score?: string) {
+  private endGame(winner?: string, score?: string): void {
     if (this.currentGame) {
       this.currentGame.dispose();
       this.currentGame = null;
