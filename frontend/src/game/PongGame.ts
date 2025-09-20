@@ -352,24 +352,44 @@ export class PongGame {
   }
 
   private showGameEndModal(winner: string): void {
+    if (!this.gameState) return;
+
+    const currentPlayer = this.gameState.players[this.playerId];
+    const isWinner = currentPlayer && currentPlayer.username === winner;
+
     const modal = document.createElement('div');
     modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center';
     modal.innerHTML = `
-      <div class="bg-gray-800 p-8 rounded-lg text-center">
-        <h2 class="text-2xl font-bold text-white mb-4">Game Over!</h2>
-        <p class="text-xl text-gray-300 mb-6">${winner} wins!</p>
-        <button id="back-to-lobby" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded">
-          Back to Lobby
+      <div class="bg-gray-800 p-8 rounded-lg text-center border-2 ${isWinner ? 'border-green-500' : 'border-red-500'}">
+        <h2 class="text-3xl font-bold mb-4 ${isWinner ? 'text-green-400' : 'text-red-400'}">
+          ${isWinner ? '🎉 Victory!' : '😢 Defeat!'}
+        </h2>
+        <p class="text-xl text-gray-300 mb-2">
+          ${isWinner ? 'Congratulations!' : 'Better luck next time!'}
+        </p>
+        <p class="text-lg text-gray-400 mb-6">
+          ${winner} wins the pong game!
+        </p>
+        <button id="back-to-home" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded">
+          Back to Home
         </button>
       </div>
     `;
 
     document.body.appendChild(modal);
 
-    document.getElementById('back-to-lobby')!.addEventListener('click', () => {
+    document.getElementById('back-to-home')!.addEventListener('click', () => {
       document.body.removeChild(modal);
       this.onGameEnd();
     });
+
+    // Auto-close after 5 seconds
+    setTimeout(() => {
+      if (document.body.contains(modal)) {
+        document.body.removeChild(modal);
+        this.onGameEnd();
+      }
+    }, 5000);
   }
 
   dispose(): void {
