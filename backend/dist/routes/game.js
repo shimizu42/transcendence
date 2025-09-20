@@ -1,12 +1,10 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.gameRoutes = gameRoutes;
-const GameService_1 = require("../services/GameService");
-const UserService_1 = require("../services/UserService");
 const auth_1 = require("../middleware/auth");
 async function gameRoutes(fastify) {
-    const gameService = new GameService_1.GameService();
-    const userService = new UserService_1.UserService();
+    const gameService = fastify.gameService;
+    const userService = fastify.userService;
     fastify.addHook('onRequest', auth_1.authenticate);
     fastify.post('/game/invite', async (request, reply) => {
         try {
@@ -41,8 +39,10 @@ async function gameRoutes(fastify) {
             if (!game) {
                 return reply.code(400).send({ error: 'Cannot accept invitation' });
             }
-            userService.setUserInGame(game.player1Id, true);
-            userService.setUserInGame(game.player2Id, true);
+            // Set all players in game
+            game.playerIds.forEach(playerId => {
+                userService.setUserInGame(playerId, true);
+            });
             reply.send(game);
         }
         catch (error) {

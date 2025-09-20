@@ -49,8 +49,10 @@ export async function gameRoutes(fastify: FastifyInstance) {
         return reply.code(400).send({ error: 'Cannot accept invitation' });
       }
 
-      userService.setUserInGame(game.player1Id, true);
-      userService.setUserInGame(game.player2Id, true);
+      // Set all players in game
+      game.playerIds.forEach(playerId => {
+        userService.setUserInGame(playerId, true);
+      });
 
       reply.send(game);
     } catch (error) {

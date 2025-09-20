@@ -9,6 +9,7 @@ export class UserList {
   private currentUser: User;
   private users: User[] = [];
   private onGameStart: (gameId: string) => void;
+  private inQueue4Player: boolean = false;
 
   constructor(container: HTMLElement, currentUser: User, wsService: WebSocketService, onGameStart: (gameId: string) => void) {
     this.container = container;
@@ -41,6 +42,16 @@ export class UserList {
     this.wsService.on('gameStart', (data: { gameId: string }) => {
       this.onGameStart(data.gameId);
     });
+
+    this.wsService.on('queueUpdate', (data: { waiting: number; needed: number }) => {
+      const queueInfo = document.getElementById('queue-info')!;
+      queueInfo.textContent = `Waiting for players: ${data.waiting}/4 (${data.needed} more needed)`;
+    });
+
+    this.wsService.on('leftQueue', () => {
+      this.inQueue4Player = false;
+      this.updateQueueButton();
+    });
   }
 
   private async loadUsers(): Promise<void> {
@@ -66,8 +77,20 @@ export class UserList {
               </div>
             </div>
             
+            <div class="bg-gray-700 rounded-lg p-4 mb-4">
+              <h2 class="text-xl font-semibold text-white mb-4">Game Modes</h2>
+              <div class="flex space-x-4 mb-6">
+                <button id="join-4player-queue" class="bg-purple-600 hover:bg-purple-700 text-white px-6 py-3 rounded-lg font-bold text-lg">
+                  🎮 Join 4-Player Battle
+                </button>
+                <div id="queue-status" class="flex items-center text-gray-300">
+                  <span id="queue-info">Click to join the 4-player queue!</span>
+                </div>
+              </div>
+            </div>
+            
             <div class="bg-gray-700 rounded-lg p-4">
-              <h2 class="text-xl font-semibold text-white mb-4">Online Players</h2>
+              <h2 class="text-xl font-semibold text-white mb-4">1vs1 Challenges</h2>
               <div id="user-list" class="space-y-2">
                 <!-- User list will be rendered here -->
               </div>
@@ -143,6 +166,21 @@ export class UserList {
       localStorage.clear();
       location.reload();
     });
+
+    const join4PlayerBtn = document.getElementById('join-4player-queue')!;
+    join4PlayerBtn.addEventListener('click', () => {
+      if (this.inQueue4Player) {
+        console.log('Leaving 4-player queue');
+        this.wsService.send('leaveQueue4Player', {});
+        this.inQueue4Player = false;
+        this.updateQueueButton();
+      } else {
+        console.log('Joining 4-player queue');
+        this.wsService.send('joinQueue4Player', {});
+        this.inQueue4Player = true;
+        this.updateQueueButton();
+      }
+    });
   }
 
   private inviteUser(userId: string): void {
@@ -177,5 +215,20 @@ export class UserList {
       modal.classList.add('hidden');
       modal.classList.remove('flex');
     };
+  }
+
+  private updateQueueButton(): void {
+    const button = document.getElementById('join-4player-queue')! as HTMLButtonElement;
+    const queueInfo = document.getElementById('queue-info')!;
+    
+    if (this.inQueue4Player) {
+      button.textContent = '❌ Leave Queue';
+      button.className = 'bg-red-600 hover:bg-red-700 text-white px-6 py-3 rounded-lg font-bold text-lg';
+      queueInfo.textContent = 'You are in the 4-player queue. Waiting for other players...';
+    } else {
+      button.textContent = '🎮 Join 4-Player Battle';
+      button.className = 'bg-purple-600 hover:bg-purple-700 text-white px-6 py-3 rounded-lg font-bold text-lg';
+      queueInfo.textContent = 'Click to join the 4-player queue!';
+    }
   }
 }

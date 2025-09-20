@@ -1,6 +1,6 @@
 import { Engine, Scene, ArcRotateCamera, HemisphericLight, Vector3, MeshBuilder, StandardMaterial, Color3, DirectionalLight } from '@babylonjs/core';
 import { WebSocketService } from '../services/WebSocketService';
-import { GameState } from '../types/Game';
+import { GameState, Player } from '../types/Game';
 
 export class PongGame {
   private canvas: HTMLCanvasElement;
@@ -11,25 +11,26 @@ export class PongGame {
   private gameId: string;
   private gameState: GameState | null = null;
   private onGameEnd: () => void;
+  private playerId: string;
 
   private ball: any;
-  private paddle1: any;
-  private paddle2: any;
+  private paddles: { [key: string]: any } = {};
+  private walls: any[] = [];
 
-  constructor(canvas: HTMLCanvasElement, wsService: WebSocketService, gameId: string, _currentUser: any, onGameEnd: () => void) {
+  constructor(canvas: HTMLCanvasElement, wsService: WebSocketService, gameId: string, currentUser: any, onGameEnd: () => void) {
     this.canvas = canvas;
     this.engine = new Engine(canvas, true);
     this.scene = new Scene(this.engine);
     this.wsService = wsService;
     this.gameId = gameId;
     this.onGameEnd = onGameEnd;
+    this.playerId = currentUser.id;
     
-    this.camera = new ArcRotateCamera('camera', 0, Math.PI / 3, 20, Vector3.Zero(), this.scene);
+    this.camera = new ArcRotateCamera('camera', 0, Math.PI / 3, 25, Vector3.Zero(), this.scene);
   }
 
   async init(): Promise<void> {
     this.setupScene();
-    this.createGameObjects();
     this.setupControls();
     this.setupWebSocketListeners();
     
@@ -57,11 +58,16 @@ export class PongGame {
   }
 
   private createGameObjects(): void {
-    const ground = MeshBuilder.CreateGround('ground', { width: 20, height: 10 }, this.scene);
+    // Create playing field - for 4-player: square field, for 2-player: rectangular field
+    const fieldSize = this.gameState?.gameType === '4player' ? 20 : 20;
+    const fieldDepth = this.gameState?.gameType === '4player' ? 20 : 10;
+    
+    const ground = MeshBuilder.CreateGround('ground', { width: fieldSize, height: fieldDepth }, this.scene);
     const groundMaterial = new StandardMaterial('groundMaterial', this.scene);
     groundMaterial.diffuseColor = new Color3(0.1, 0.1, 0.2);
     ground.material = groundMaterial;
 
+    // Create ball
     this.ball = MeshBuilder.CreateSphere('ball', { diameter: 0.5 }, this.scene);
     this.ball.position = new Vector3(0, 0.25, 0);
     const ballMaterial = new StandardMaterial('ballMaterial', this.scene);
@@ -69,32 +75,26 @@ export class PongGame {
     ballMaterial.emissiveColor = new Color3(0.2, 0.2, 0.2);
     this.ball.material = ballMaterial;
 
-    this.paddle1 = MeshBuilder.CreateBox('paddle1', { width: 0.2, height: 1, depth: 2 }, this.scene);
-    this.paddle1.position = new Vector3(-9, 0.5, 0);
-    const paddle1Material = new StandardMaterial('paddle1Material', this.scene);
-    paddle1Material.diffuseColor = new Color3(0, 1, 0);
-    paddle1Material.emissiveColor = new Color3(0, 0.2, 0);
-    this.paddle1.material = paddle1Material;
-
-    this.paddle2 = MeshBuilder.CreateBox('paddle2', { width: 0.2, height: 1, depth: 2 }, this.scene);
-    this.paddle2.position = new Vector3(9, 0.5, 0);
-    const paddle2Material = new StandardMaterial('paddle2Material', this.scene);
-    paddle2Material.diffuseColor = new Color3(1, 0, 0);
-    paddle2Material.emissiveColor = new Color3(0.2, 0, 0);
-    this.paddle2.material = paddle2Material;
-
-    const walls = [
-      { name: 'topWall', position: new Vector3(0, 0.5, 5), size: { width: 20, height: 1, depth: 0.2 } },
-      { name: 'bottomWall', position: new Vector3(0, 0.5, -5), size: { width: 20, height: 1, depth: 0.2 } }
-    ];
-
-    walls.forEach(wall => {
-      const wallMesh = MeshBuilder.CreateBox(wall.name, wall.size, this.scene);
-      wallMesh.position = wall.position;
-      const wallMaterial = new StandardMaterial(`${wall.name}Material`, this.scene);
-      wallMaterial.diffuseColor = new Color3(0.3, 0.3, 0.3);
-      wallMesh.material = wallMaterial;
-    });
+    // Create walls based on game type
+    if (this.gameState?.gameType === '4player') {
+      // For 4-player: initially no walls, they will be created dynamically when players lose
+      // No walls created here - they will be added when players are eliminated
+    } else {
+      // For 2-player: create top and bottom walls only
+      const wallConfigs = [
+        { name: 'topWall', position: new Vector3(0, 0.5, 5), size: { width: 20, height: 1, depth: 0.2 } },
+        { name: 'bottomWall', position: new Vector3(0, 0.5, -5), size: { width: 20, height: 1, depth: 0.2 } }
+      ];
+      
+      wallConfigs.forEach(wall => {
+        const wallMesh = MeshBuilder.CreateBox(wall.name, wall.size, this.scene);
+        wallMesh.position = wall.position;
+        const wallMaterial = new StandardMaterial(`${wall.name}Material`, this.scene);
+        wallMaterial.diffuseColor = new Color3(0.3, 0.3, 0.3);
+        wallMesh.material = wallMaterial;
+        this.walls.push(wallMesh);
+      });
+    }
   }
 
   private setupControls(): void {
@@ -111,11 +111,18 @@ export class PongGame {
     this.scene.registerBeforeRender(() => {
       let paddleMove = 0;
       
+      // Controls work for both 2-player and 4-player modes
       if (keys['w'] || keys['arrowup']) {
-        paddleMove = 0.2;
+        paddleMove = 1;
       }
       if (keys['s'] || keys['arrowdown']) {
-        paddleMove = -0.2;
+        paddleMove = -1;
+      }
+      if (keys['a'] || keys['arrowleft']) {
+        paddleMove = -1;
+      }
+      if (keys['d'] || keys['arrowright']) {
+        paddleMove = 1;
       }
 
       if (paddleMove !== 0) {
@@ -130,6 +137,12 @@ export class PongGame {
   private setupWebSocketListeners(): void {
     this.wsService.on('gameState', (state: GameState) => {
       this.gameState = state;
+      
+      // Create game objects on first state update
+      if (!this.ball) {
+        this.createGameObjects();
+      }
+      
       this.updateGameObjects();
       
       if (state.gameStatus === 'finished') {
@@ -137,22 +150,183 @@ export class PongGame {
       }
     });
 
-    this.wsService.on('playerAssignment', (_data: { playerId: string; playerNumber: number }) => {
-      // Player assignment handled
+    this.wsService.on('playerAssignment', (data: { playerId: string; playerNumber: number; side?: string }) => {
+      console.log('Player assignment received:', data);
+      if (data.playerId === this.playerId) {
+        // This is our player assignment
+        if (this.gameState?.gameType === '4player' && data.side) {
+          this.adjustCameraFor4Player(data.side);
+        }
+      }
     });
   }
 
   private updateGameObjects(): void {
     if (!this.gameState) return;
 
+    // Update ball position
     this.ball.position.x = this.gameState.ball.x;
     this.ball.position.y = this.gameState.ball.y;
     this.ball.position.z = this.gameState.ball.z;
 
-    this.paddle1.position.z = this.gameState.player1.paddleY;
-    this.paddle2.position.z = this.gameState.player2.paddleY;
-
+    // Create or update paddles based on game state
+    this.updatePaddles();
     this.updateUI();
+  }
+
+  private updatePaddles(): void {
+    if (!this.gameState) return;
+
+    Object.values(this.gameState.players).forEach((player: Player, index) => {
+      if (!this.paddles[player.id]) {
+        this.createPaddle(player, index);
+      }
+      
+      const paddle = this.paddles[player.id];
+      if (paddle && player.isAlive) {
+        this.updatePaddlePosition(paddle, player);
+        paddle.setEnabled(true);
+      } else if (paddle) {
+        paddle.setEnabled(false);
+        // Create wall for eliminated player in 4-player mode
+        if (this.gameState?.gameType === '4player') {
+          this.createWallForEliminatedPlayer(player);
+        }
+      }
+    });
+  }
+
+  private createPaddle(player: Player, index: number): void {
+    const colors = [
+      new Color3(0, 1, 0),    // Green
+      new Color3(1, 0, 0),    // Red
+      new Color3(0, 0, 1),    // Blue
+      new Color3(1, 1, 0)     // Yellow
+    ];
+
+    let paddleSize;
+    let position;
+    
+    if (this.gameState?.gameType === '4player') {
+      // 4-player mode: paddles on each side of the square
+      paddleSize = { width: 2, height: 1, depth: 0.2 };
+      
+      switch (player.side) {
+        case 'left':
+          position = new Vector3(-9.5, 0.5, player.paddlePosition);
+          paddleSize = { width: 0.2, height: 1, depth: 2 };
+          break;
+        case 'right':
+          position = new Vector3(9.5, 0.5, player.paddlePosition);
+          paddleSize = { width: 0.2, height: 1, depth: 2 };
+          break;
+        case 'top':
+          position = new Vector3(player.paddlePosition, 0.5, 9.5);
+          paddleSize = { width: 2, height: 1, depth: 0.2 };
+          break;
+        case 'bottom':
+          position = new Vector3(player.paddlePosition, 0.5, -9.5);
+          paddleSize = { width: 2, height: 1, depth: 0.2 };
+          break;
+        default:
+          position = new Vector3(0, 0.5, 0);
+      }
+    } else {
+      // 2-player mode: paddles on left and right
+      paddleSize = { width: 0.2, height: 1, depth: 2 };
+      position = player.side === 'left' 
+        ? new Vector3(-9, 0.5, player.paddlePosition)
+        : new Vector3(9, 0.5, player.paddlePosition);
+    }
+
+    const paddle = MeshBuilder.CreateBox(`paddle_${player.id}`, paddleSize, this.scene);
+    paddle.position = position;
+    
+    const paddleMaterial = new StandardMaterial(`paddle_${player.id}_material`, this.scene);
+    const color = colors[index % colors.length];
+    paddleMaterial.diffuseColor = color;
+    paddleMaterial.emissiveColor = color.scale(0.2);
+    paddle.material = paddleMaterial;
+    
+    this.paddles[player.id] = paddle;
+  }
+
+  private updatePaddlePosition(paddle: any, player: Player): void {
+    if (this.gameState?.gameType === '4player') {
+      switch (player.side) {
+        case 'left':
+        case 'right':
+          paddle.position.z = player.paddlePosition;
+          break;
+        case 'top':
+        case 'bottom':
+          paddle.position.x = player.paddlePosition;
+          break;
+      }
+    } else {
+      paddle.position.z = player.paddlePosition;
+    }
+  }
+
+  private createWallForEliminatedPlayer(player: Player): void {
+    const wallId = `wall_${player.id}`;
+    
+    // Check if wall already exists
+    if (this.scene.getMeshByName(wallId)) {
+      return;
+    }
+
+    let wallConfig;
+    switch (player.side) {
+      case 'left':
+        wallConfig = { position: new Vector3(-10.2, 0.5, 0), size: { width: 0.4, height: 1, depth: 20 } };
+        break;
+      case 'right':
+        wallConfig = { position: new Vector3(10.2, 0.5, 0), size: { width: 0.4, height: 1, depth: 20 } };
+        break;
+      case 'top':
+        wallConfig = { position: new Vector3(0, 0.5, 10.2), size: { width: 20, height: 1, depth: 0.4 } };
+        break;
+      case 'bottom':
+        wallConfig = { position: new Vector3(0, 0.5, -10.2), size: { width: 20, height: 1, depth: 0.4 } };
+        break;
+      default:
+        return;
+    }
+
+    const wallMesh = MeshBuilder.CreateBox(wallId, wallConfig.size, this.scene);
+    wallMesh.position = wallConfig.position;
+    const wallMaterial = new StandardMaterial(`${wallId}Material`, this.scene);
+    wallMaterial.diffuseColor = new Color3(0.5, 0.1, 0.1); // Red color to indicate eliminated player's wall
+    wallMaterial.emissiveColor = new Color3(0.1, 0, 0);
+    wallMesh.material = wallMaterial;
+    this.walls.push(wallMesh);
+  }
+
+  private adjustCameraFor4Player(playerSide: string): void {
+    if (this.gameState?.gameType !== '4player') return;
+
+    // Adjust camera position and target based on player's side
+    switch (playerSide) {
+      case 'left':
+        this.camera.setTarget(Vector3.Zero());
+        this.camera.alpha = Math.PI; // Looking from left side
+        break;
+      case 'right':
+        this.camera.setTarget(Vector3.Zero());
+        this.camera.alpha = 0; // Looking from right side
+        break;
+      case 'top':
+        this.camera.setTarget(Vector3.Zero());
+        this.camera.alpha = Math.PI / 2; // Looking from top
+        break;
+      case 'bottom':
+        this.camera.setTarget(Vector3.Zero());
+        this.camera.alpha = -Math.PI / 2; // Looking from bottom
+        break;
+    }
+    this.camera.beta = Math.PI / 3;
+    this.camera.radius = 30;
   }
 
   private updateUI(): void {
@@ -160,7 +334,20 @@ export class PongGame {
 
     const scoreElement = document.getElementById('game-score');
     if (scoreElement) {
-      scoreElement.textContent = `${this.gameState.player1.username}: ${this.gameState.player1.score} - ${this.gameState.player2.username}: ${this.gameState.player2.score}`;
+      if (this.gameState.gameType === '4player') {
+        // Show lives and alive status for 4-player
+        const alivePlayers = Object.values(this.gameState.players)
+          .filter((p: Player) => p.isAlive)
+          .map((p: Player) => `${p.username}: ${p.lives} lives`)
+          .join(' | ');
+        scoreElement.textContent = `Alive: ${alivePlayers}`;
+      } else {
+        // Show scores for 2-player
+        const players = Object.values(this.gameState.players) as Player[];
+        if (players.length >= 2) {
+          scoreElement.textContent = `${players[0].username}: ${players[0].score} - ${players[1].username}: ${players[1].score}`;
+        }
+      }
     }
   }
 

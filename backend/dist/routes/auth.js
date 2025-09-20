@@ -1,10 +1,9 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.authRoutes = authRoutes;
-const UserService_1 = require("../services/UserService");
 const auth_1 = require("../middleware/auth");
 async function authRoutes(fastify) {
-    const userService = new UserService_1.UserService();
+    const userService = fastify.userService;
     fastify.post('/auth/register', async (request, reply) => {
         try {
             const { username, password } = request.body;

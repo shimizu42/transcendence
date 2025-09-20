@@ -15,14 +15,22 @@ export interface GameInvitation {
   createdAt: Date;
 }
 
+export interface GamePlayer {
+  id: string;
+  username: string;
+  score: number;
+  lives: number;
+  paddlePosition: number;
+  isAlive: boolean;
+  side: 'top' | 'bottom' | 'left' | 'right';
+}
+
 export interface Game {
   id: string;
-  player1Id: string;
-  player2Id: string;
-  player1Score: number;
-  player2Score: number;
-  player1PaddleY: number;
-  player2PaddleY: number;
+  gameType: '2player' | '4player';
+  players: { [key: string]: GamePlayer };
+  playerIds: string[];
+  maxPlayers: number;
   ballX: number;
   ballY: number;
   ballZ: number;
@@ -31,5 +39,6 @@ export interface Game {
   ballVelocityZ: number;
   status: 'waiting' | 'playing' | 'finished';
   winner?: string;
+  alivePlayers: string[];
   createdAt: Date;
 }

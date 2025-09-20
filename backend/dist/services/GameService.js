@@ -10,6 +10,7 @@ class GameService {
         this.games = new Map();
         this.invitations = new Map();
         this.gameIntervals = new Map();
+        this.waitingRoom4Player = []; // 4人対戦待機中のプレイヤーID
     }
     createInvitation(fromUserId, toUserId) {
         const invitation = {
@@ -31,7 +32,7 @@ class GameService {
             return null;
         }
         invitation.status = 'accepted';
-        const game = this.createGame(invitation.fromUserId, invitation.toUserId);
+        const game = this.createGame([invitation.fromUserId, invitation.toUserId], '2player');
         this.invitations.delete(id);
         return game;
     }
@@ -44,22 +45,38 @@ class GameService {
         this.invitations.delete(id);
         return true;
     }
-    createGame(player1Id, player2Id) {
+    createGame(playerIds, gameType = '2player') {
+        const gameId = crypto_1.default.randomUUID();
+        const sides = gameType === '4player'
+            ? ['left', 'top', 'right', 'bottom']
+            : ['left', 'right'];
+        const players = {};
+        const maxLives = gameType === '4player' ? 3 : 5; // 4人戦は3ライフ、2人戦は5ポイント制
+        playerIds.forEach((playerId, index) => {
+            players[playerId] = {
+                id: playerId,
+                username: `Player${index + 1}`, // これは後でUserServiceから取得
+                score: 0,
+                lives: maxLives,
+                paddlePosition: 0,
+                isAlive: true,
+                side: sides[index]
+            };
+        });
         const game = {
-            id: crypto_1.default.randomUUID(),
-            player1Id,
-            player2Id,
-            player1Score: 0,
-            player2Score: 0,
-            player1PaddleY: 0,
-            player2PaddleY: 0,
+            id: gameId,
+            gameType,
+            players,
+            playerIds,
+            maxPlayers: gameType === '4player' ? 4 : 2,
             ballX: 0,
             ballY: 0.25,
             ballZ: 0,
-            ballVelocityX: 0.1,
+            ballVelocityX: Math.random() > 0.5 ? 0.1 : -0.1,
             ballVelocityY: 0,
-            ballVelocityZ: 0.05,
+            ballVelocityZ: (Math.random() - 0.5) * 0.1,
             status: 'waiting',
+            alivePlayers: [...playerIds],
             createdAt: new Date()
         };
         this.games.set(game.id, game);
@@ -82,14 +99,13 @@ class GameService {
         if (!game || game.status !== 'playing') {
             return false;
         }
+        const player = game.players[playerId];
+        if (!player || !player.isAlive) {
+            return false;
+        }
         const paddleSpeed = 0.2;
-        const maxPaddleY = 4;
-        if (playerId === game.player1Id) {
-            game.player1PaddleY = Math.max(-maxPaddleY, Math.min(maxPaddleY, game.player1PaddleY + (direction * paddleSpeed)));
-        }
-        else if (playerId === game.player2Id) {
-            game.player2PaddleY = Math.max(-maxPaddleY, Math.min(maxPaddleY, game.player2PaddleY + (direction * paddleSpeed)));
-        }
+        const maxPosition = 4;
+        player.paddlePosition = Math.max(-maxPosition, Math.min(maxPosition, player.paddlePosition + (direction * paddleSpeed)));
         return true;
     }
     endGame(gameId, winner) {
@@ -115,8 +131,14 @@ class GameService {
                 return;
             }
             this.updateBall(game);
-            this.checkCollisions(game);
-            this.checkScore(game);
+            if (game.gameType === '4player') {
+                this.checkCollisions4Player(game);
+                this.checkBounds4Player(game);
+            }
+            else {
+                this.checkCollisions(game);
+                this.checkScore(game);
+            }
         }, 16);
         this.gameIntervals.set(gameId, interval);
     }
@@ -135,31 +157,38 @@ class GameService {
         const ballRadius = 0.25;
         const paddleWidth = 0.2;
         const paddleHeight = 2;
-        if (game.ballX <= -8.5 && game.ballX >= -9.5) {
-            if (Math.abs(game.ballZ - game.player1PaddleY) <= paddleHeight / 2) {
+        const players = Object.values(game.players);
+        const leftPlayer = players.find(p => p.side === 'left');
+        const rightPlayer = players.find(p => p.side === 'right');
+        if (game.ballX <= -8.5 && game.ballX >= -9.5 && leftPlayer) {
+            if (Math.abs(game.ballZ - leftPlayer.paddlePosition) <= paddleHeight / 2) {
                 game.ballVelocityX *= -1;
-                game.ballVelocityZ += (game.ballZ - game.player1PaddleY) * 0.1;
+                game.ballVelocityZ += (game.ballZ - leftPlayer.paddlePosition) * 0.1;
             }
         }
-        if (game.ballX >= 8.5 && game.ballX <= 9.5) {
-            if (Math.abs(game.ballZ - game.player2PaddleY) <= paddleHeight / 2) {
+        if (game.ballX >= 8.5 && game.ballX <= 9.5 && rightPlayer) {
+            if (Math.abs(game.ballZ - rightPlayer.paddlePosition) <= paddleHeight / 2) {
                 game.ballVelocityX *= -1;
-                game.ballVelocityZ += (game.ballZ - game.player2PaddleY) * 0.1;
+                game.ballVelocityZ += (game.ballZ - rightPlayer.paddlePosition) * 0.1;
             }
         }
     }
     checkScore(game) {
-        if (game.ballX < -10) {
-            game.player2Score++;
+        const players = Object.values(game.players);
+        const leftPlayer = players.find(p => p.side === 'left');
+        const rightPlayer = players.find(p => p.side === 'right');
+        if (game.ballX < -10 && rightPlayer) {
+            rightPlayer.score++;
             this.resetBall(game);
         }
-        else if (game.ballX > 10) {
-            game.player1Score++;
+        else if (game.ballX > 10 && leftPlayer) {
+            leftPlayer.score++;
             this.resetBall(game);
         }
-        if (game.player1Score >= 5 || game.player2Score >= 5) {
-            const winner = game.player1Score >= 5 ? game.player1Id : game.player2Id;
-            this.endGame(game.id, winner);
+        const maxScore = 5;
+        const winner = players.find(p => p.score >= maxScore);
+        if (winner) {
+            this.endGame(game.id, winner.id);
         }
     }
     resetBall(game) {
@@ -170,6 +199,88 @@ class GameService {
         game.ballVelocityY = 0;
         game.ballVelocityZ = (Math.random() - 0.5) * 0.1;
     }
+    // 4人対戦用の衝突検知
+    checkCollisions4Player(game) {
+        const fieldSize = 10;
+        const paddleSize = 2;
+        // 各辺での衝突をチェック
+        Object.values(game.players).forEach(player => {
+            if (!player.isAlive)
+                return;
+            switch (player.side) {
+                case 'left':
+                    if (game.ballX <= -fieldSize / 2 + 0.5 && game.ballX >= -fieldSize / 2 - 0.5) {
+                        if (Math.abs(game.ballZ - player.paddlePosition) <= paddleSize / 2) {
+                            game.ballVelocityX = Math.abs(game.ballVelocityX);
+                            game.ballVelocityZ += (game.ballZ - player.paddlePosition) * 0.1;
+                        }
+                    }
+                    break;
+                case 'right':
+                    if (game.ballX >= fieldSize / 2 - 0.5 && game.ballX <= fieldSize / 2 + 0.5) {
+                        if (Math.abs(game.ballZ - player.paddlePosition) <= paddleSize / 2) {
+                            game.ballVelocityX = -Math.abs(game.ballVelocityX);
+                            game.ballVelocityZ += (game.ballZ - player.paddlePosition) * 0.1;
+                        }
+                    }
+                    break;
+                case 'top':
+                    if (game.ballZ >= fieldSize / 2 - 0.5 && game.ballZ <= fieldSize / 2 + 0.5) {
+                        if (Math.abs(game.ballX - player.paddlePosition) <= paddleSize / 2) {
+                            game.ballVelocityZ = -Math.abs(game.ballVelocityZ);
+                            game.ballVelocityX += (game.ballX - player.paddlePosition) * 0.1;
+                        }
+                    }
+                    break;
+                case 'bottom':
+                    if (game.ballZ <= -fieldSize / 2 + 0.5 && game.ballZ >= -fieldSize / 2 - 0.5) {
+                        if (Math.abs(game.ballX - player.paddlePosition) <= paddleSize / 2) {
+                            game.ballVelocityZ = Math.abs(game.ballVelocityZ);
+                            game.ballVelocityX += (game.ballX - player.paddlePosition) * 0.1;
+                        }
+                    }
+                    break;
+            }
+            // 速度制限
+            const maxSpeed = 0.3;
+            game.ballVelocityX = Math.max(-maxSpeed, Math.min(maxSpeed, game.ballVelocityX));
+            game.ballVelocityZ = Math.max(-maxSpeed, Math.min(maxSpeed, game.ballVelocityZ));
+        });
+    }
+    // 4人対戦用の境界チェック
+    checkBounds4Player(game) {
+        const fieldSize = 10;
+        // ボールが境界を越えた場合、該当するプレイヤーのライフを減らす
+        if (game.ballX < -fieldSize / 2) {
+            this.playerLoseLife(game, 'left');
+        }
+        else if (game.ballX > fieldSize / 2) {
+            this.playerLoseLife(game, 'right');
+        }
+        else if (game.ballZ > fieldSize / 2) {
+            this.playerLoseLife(game, 'top');
+        }
+        else if (game.ballZ < -fieldSize / 2) {
+            this.playerLoseLife(game, 'bottom');
+        }
+    }
+    playerLoseLife(game, side) {
+        const player = Object.values(game.players).find(p => p.side === side);
+        if (!player || !player.isAlive)
+            return;
+        player.lives--;
+        if (player.lives <= 0) {
+            player.isAlive = false;
+            game.alivePlayers = game.alivePlayers.filter(id => id !== player.id);
+            // 最後の1人になったらゲーム終了
+            if (game.alivePlayers.length <= 1) {
+                const winner = game.alivePlayers[0];
+                this.endGame(game.id, winner);
+                return;
+            }
+        }
+        this.resetBall(game);
+    }
     removeGame(gameId) {
         const interval = this.gameIntervals.get(gameId);
         if (interval) {
@@ -177,6 +288,25 @@ class GameService {
             this.gameIntervals.delete(gameId);
         }
         this.games.delete(gameId);
+    }
+    // 4人対戦のマッチメイキング
+    joinQueue4Player(playerId) {
+        if (this.waitingRoom4Player.includes(playerId)) {
+            return null; // 既に待機中
+        }
+        this.waitingRoom4Player.push(playerId);
+        // 4人揃ったらゲーム開始
+        if (this.waitingRoom4Player.length >= 4) {
+            const players = this.waitingRoom4Player.splice(0, 4);
+            return this.createGame(players, '4player');
+        }
+        return null;
+    }
+    leaveQueue4Player(playerId) {
+        this.waitingRoom4Player = this.waitingRoom4Player.filter(id => id !== playerId);
+    }
+    getWaitingCount4Player() {
+        return this.waitingRoom4Player.length;
     }
 }
 exports.GameService = GameService;

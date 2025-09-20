@@ -60,6 +60,12 @@ export class WebSocketService {
       case 'gameInviteResponse':
         this.handleGameInviteResponse(connectionId, message.data);
         break;
+      case 'joinQueue4Player':
+        this.handleJoinQueue4Player(connectionId, message.data);
+        break;
+      case 'leaveQueue4Player':
+        this.handleLeaveQueue4Player(connectionId, message.data);
+        break;
       case 'joinGame':
         this.handleJoinGame(connectionId, message.data);
         break;
@@ -141,20 +147,24 @@ export class WebSocketService {
     if (data.response === 'accept') {
       const game = this.gameService.acceptInvitation(data.invitationId);
       if (game) {
-        this.userService.setUserInGame(game.player1Id, true);
-        this.userService.setUserInGame(game.player2Id, true);
+        // Set all players in game
+        game.playerIds.forEach(playerId => {
+          this.userService.setUserInGame(playerId, true);
+        });
 
-        const player1Connection = this.findConnectionByUserId(game.player1Id);
-        const player2Connection = this.findConnectionByUserId(game.player2Id);
-
-        if (player1Connection) {
-          this.sendToConnection(player1Connection, 'gameStart', { gameId: game.id });
-          this.sendToConnection(player1Connection, 'playerAssignment', { playerId: game.player1Id, playerNumber: 1 });
-        }
-        if (player2Connection) {
-          this.sendToConnection(player2Connection, 'gameStart', { gameId: game.id });
-          this.sendToConnection(player2Connection, 'playerAssignment', { playerId: game.player2Id, playerNumber: 2 });
-        }
+        // Send game start to all players
+        game.playerIds.forEach((playerId, index) => {
+          const playerConnection = this.findConnectionByUserId(playerId);
+          if (playerConnection) {
+            this.sendToConnection(playerConnection, 'gameStart', { gameId: game.id });
+            const player = game.players[playerId];
+            this.sendToConnection(playerConnection, 'playerAssignment', { 
+              playerId: playerId, 
+              playerNumber: index + 1,
+              side: player.side
+            });
+          }
+        });
 
         this.gameService.startGame(game.id);
         this.startGameStateUpdates(game.id);
@@ -169,7 +179,7 @@ export class WebSocketService {
     }
   }
 
-  private handleJoinGame(connectionId: string, data: { gameId: string }): void {
+  private handleJoinGame(_connectionId: string, data: { gameId: string }): void {
     const game = this.gameService.getGame(data.gameId);
     if (game) {
       this.sendGameState(data.gameId);
@@ -183,6 +193,53 @@ export class WebSocketService {
     this.gameService.updatePaddle(data.gameId, connection.userId, data.direction);
   }
 
+  private handleJoinQueue4Player(connectionId: string, _data: any): void {
+    console.log('WebSocket: Handling join queue 4 player for connection', connectionId);
+    const connection = this.connections.get(connectionId);
+    if (!connection || !connection.userId) {
+      console.error('WebSocket: Invalid connection for join queue 4 player', connectionId);
+      return;
+    }
+
+    const game = this.gameService.joinQueue4Player(connection.userId);
+    
+    if (game) {
+      console.log('WebSocket: 4-player game created', game.id);
+      // 4人のプレイヤー全員をゲームに参加させる
+      game.playerIds.forEach((playerId, index) => {
+        this.userService.setUserInGame(playerId, true);
+        const playerConnection = this.findConnectionByUserId(playerId);
+        if (playerConnection) {
+          this.sendToConnection(playerConnection, 'gameStart', { gameId: game.id });
+          this.sendToConnection(playerConnection, 'playerAssignment', { 
+            playerId: playerId, 
+            playerNumber: index + 1,
+            side: Object.values(game.players)[index].side
+          });
+        }
+      });
+
+      this.gameService.startGame(game.id);
+      this.startGameStateUpdates(game.id);
+      this.broadcastUserUpdate();
+    } else {
+      // 待機中
+      const waitingCount = this.gameService.getWaitingCount4Player();
+      this.sendToConnection(connectionId, 'queueUpdate', { 
+        waiting: waitingCount,
+        needed: 4 - waitingCount 
+      });
+    }
+  }
+
+  private handleLeaveQueue4Player(connectionId: string, _data: any): void {
+    const connection = this.connections.get(connectionId);
+    if (!connection || !connection.userId) return;
+
+    this.gameService.leaveQueue4Player(connection.userId);
+    this.sendToConnection(connectionId, 'leftQueue', {});
+  }
+
   private handleLeaveGame(connectionId: string, data: { gameId: string }): void {
     const connection = this.connections.get(connectionId);
     if (!connection || !connection.userId) return;
@@ -190,8 +247,12 @@ export class WebSocketService {
     const game = this.gameService.getGame(data.gameId);
     if (game) {
       this.gameService.endGame(data.gameId);
-      this.userService.setUserInGame(game.player1Id, false);
-      this.userService.setUserInGame(game.player2Id, false);
+      
+      // 全プレイヤーをゲーム外に設定
+      game.playerIds.forEach(playerId => {
+        this.userService.setUserInGame(playerId, false);
+      });
+      
       this.broadcastUserUpdate();
     }
   }
@@ -212,8 +273,10 @@ export class WebSocketService {
         clearInterval(interval);
         if (game && game.status === 'finished') {
           this.sendGameEnd(gameId, game.winner!);
-          this.userService.setUserInGame(game.player1Id, false);
-          this.userService.setUserInGame(game.player2Id, false);
+          // Set all players as not in game
+          game.playerIds.forEach(playerId => {
+            this.userService.setUserInGame(playerId, false);
+          });
           this.broadcastUserUpdate();
         }
         return;
@@ -226,22 +289,19 @@ export class WebSocketService {
     const game = this.gameService.getGame(gameId);
     if (!game) return;
 
-    const player1 = this.userService.getUserById(game.player1Id);
-    const player2 = this.userService.getUserById(game.player2Id);
+    // プレイヤー情報にユーザー名を追加
+    const playersWithUsernames: { [key: string]: any } = {};
+    Object.entries(game.players).forEach(([playerId, player]) => {
+      const user = this.userService.getUserById(playerId);
+      playersWithUsernames[playerId] = {
+        ...player,
+        username: user?.username || player.username
+      };
+    });
 
     const gameState = {
-      player1: {
-        id: game.player1Id,
-        username: player1?.username || 'Player 1',
-        score: game.player1Score,
-        paddleY: game.player1PaddleY
-      },
-      player2: {
-        id: game.player2Id,
-        username: player2?.username || 'Player 2',
-        score: game.player2Score,
-        paddleY: game.player2PaddleY
-      },
+      gameType: game.gameType,
+      players: playersWithUsernames,
       ball: {
         x: game.ballX,
         y: game.ballY,
@@ -251,18 +311,17 @@ export class WebSocketService {
         velocityZ: game.ballVelocityZ
       },
       gameStatus: game.status,
-      winner: game.winner
+      winner: game.winner,
+      alivePlayers: game.alivePlayers
     };
 
-    const player1Connection = this.findConnectionByUserId(game.player1Id);
-    const player2Connection = this.findConnectionByUserId(game.player2Id);
-
-    if (player1Connection) {
-      this.sendToConnection(player1Connection, 'gameState', gameState);
-    }
-    if (player2Connection) {
-      this.sendToConnection(player2Connection, 'gameState', gameState);
-    }
+    // 全プレイヤーにゲーム状態を送信
+    game.playerIds.forEach(playerId => {
+      const playerConnection = this.findConnectionByUserId(playerId);
+      if (playerConnection) {
+        this.sendToConnection(playerConnection, 'gameState', gameState);
+      }
+    });
   }
 
   private sendGameEnd(gameId: string, winnerId: string): void {
@@ -270,17 +329,15 @@ export class WebSocketService {
     if (!game) return;
 
     const winner = this.userService.getUserById(winnerId);
-    const player1Connection = this.findConnectionByUserId(game.player1Id);
-    const player2Connection = this.findConnectionByUserId(game.player2Id);
-
     const endData = { winner: winner?.username || 'Unknown' };
 
-    if (player1Connection) {
-      this.sendToConnection(player1Connection, 'gameEnd', endData);
-    }
-    if (player2Connection) {
-      this.sendToConnection(player2Connection, 'gameEnd', endData);
-    }
+    // 全プレイヤーにゲーム終了を通知
+    game.playerIds.forEach(playerId => {
+      const playerConnection = this.findConnectionByUserId(playerId);
+      if (playerConnection) {
+        this.sendToConnection(playerConnection, 'gameEnd', endData);
+      }
+    });
   }
 
   private broadcastUserUpdate(): void {
