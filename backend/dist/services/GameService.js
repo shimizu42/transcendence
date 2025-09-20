@@ -45,6 +45,9 @@ class GameService {
         this.invitations.delete(id);
         return true;
     }
+    createPrivateGame(playerIds, gameType = '2player') {
+        return this.createGame(playerIds, gameType);
+    }
     createGame(playerIds, gameType = '2player') {
         const gameId = crypto_1.default.randomUUID();
         const sides = gameType === '4player'
@@ -104,7 +107,8 @@ class GameService {
             return false;
         }
         const paddleSpeed = 0.2;
-        const maxPosition = 4;
+        // Increase paddle movement range to match field size
+        const maxPosition = game.gameType === '4player' ? 8 : 4;
         player.paddlePosition = Math.max(-maxPosition, Math.min(maxPosition, player.paddlePosition + (direction * paddleSpeed)));
         return true;
     }
@@ -146,16 +150,18 @@ class GameService {
         game.ballX += game.ballVelocityX;
         game.ballY += game.ballVelocityY;
         game.ballZ += game.ballVelocityZ;
-        if (game.ballZ >= 4.5 || game.ballZ <= -4.5) {
-            game.ballVelocityZ *= -1;
-        }
+        // Y軸の境界チェック（上下の反射）
         if (game.ballY <= 0.25 || game.ballY >= 2) {
             game.ballVelocityY *= -1;
         }
+        // 2人対戦の場合のみZ軸の壁での反射
+        if (game.gameType === '2player') {
+            if (game.ballZ >= 4.5 || game.ballZ <= -4.5) {
+                game.ballVelocityZ *= -1;
+            }
+        }
     }
     checkCollisions(game) {
-        const ballRadius = 0.25;
-        const paddleWidth = 0.2;
         const paddleHeight = 2;
         const players = Object.values(game.players);
         const leftPlayer = players.find(p => p.side === 'left');
@@ -199,69 +205,125 @@ class GameService {
         game.ballVelocityY = 0;
         game.ballVelocityZ = (Math.random() - 0.5) * 0.1;
     }
-    // 4人対戦用の衝突検知
+    // 4人対戦用の衝突検知（生きているプレイヤーのパドルと死んでいるプレイヤーの仕切り）
     checkCollisions4Player(game) {
-        const fieldSize = 10;
+        const fieldSize = 20;
         const paddleSize = 2;
+        // パドルはフィールド端から0.5内側に配置されているので、その位置で衝突判定
+        const paddleDistance = 0.5; // フィールド端からパドルまでの距離
+        // 重複した衝突を防ぐためのフラグ
+        let collisionOccurred = false;
         // 各辺での衝突をチェック
         Object.values(game.players).forEach(player => {
-            if (!player.isAlive)
-                return;
+            if (collisionOccurred)
+                return; // 既に衝突が起きた場合はスキップ
             switch (player.side) {
                 case 'left':
-                    if (game.ballX <= -fieldSize / 2 + 0.5 && game.ballX >= -fieldSize / 2 - 0.5) {
-                        if (Math.abs(game.ballZ - player.paddlePosition) <= paddleSize / 2) {
-                            game.ballVelocityX = Math.abs(game.ballVelocityX);
-                            game.ballVelocityZ += (game.ballZ - player.paddlePosition) * 0.1;
+                    // パドルは-9.5の位置にあるので、ボールがその位置で衝突判定
+                    if (game.ballX <= -(fieldSize / 2 - paddleDistance) && game.ballVelocityX < 0) {
+                        if (player.isAlive) {
+                            // 生きているプレイヤー：パドルとの衝突判定のみ
+                            if (Math.abs(game.ballZ - player.paddlePosition) <= paddleSize / 2) {
+                                game.ballVelocityX = Math.abs(game.ballVelocityX);
+                                game.ballVelocityZ += (game.ballZ - player.paddlePosition) * 0.1;
+                                collisionOccurred = true;
+                            }
+                        }
+                        else {
+                            // 死んでいるプレイヤー：仕切りでの反射はフィールド端で判定
+                            if (game.ballX <= -fieldSize / 2) {
+                                game.ballVelocityX = Math.abs(game.ballVelocityX);
+                                collisionOccurred = true;
+                            }
                         }
                     }
                     break;
                 case 'right':
-                    if (game.ballX >= fieldSize / 2 - 0.5 && game.ballX <= fieldSize / 2 + 0.5) {
-                        if (Math.abs(game.ballZ - player.paddlePosition) <= paddleSize / 2) {
-                            game.ballVelocityX = -Math.abs(game.ballVelocityX);
-                            game.ballVelocityZ += (game.ballZ - player.paddlePosition) * 0.1;
+                    if (game.ballX >= (fieldSize / 2 - paddleDistance) && game.ballVelocityX > 0) {
+                        if (player.isAlive) {
+                            if (Math.abs(game.ballZ - player.paddlePosition) <= paddleSize / 2) {
+                                game.ballVelocityX = -Math.abs(game.ballVelocityX);
+                                game.ballVelocityZ += (game.ballZ - player.paddlePosition) * 0.1;
+                                collisionOccurred = true;
+                            }
+                        }
+                        else {
+                            if (game.ballX >= fieldSize / 2) {
+                                game.ballVelocityX = -Math.abs(game.ballVelocityX);
+                                collisionOccurred = true;
+                            }
                         }
                     }
                     break;
                 case 'top':
-                    if (game.ballZ >= fieldSize / 2 - 0.5 && game.ballZ <= fieldSize / 2 + 0.5) {
-                        if (Math.abs(game.ballX - player.paddlePosition) <= paddleSize / 2) {
-                            game.ballVelocityZ = -Math.abs(game.ballVelocityZ);
-                            game.ballVelocityX += (game.ballX - player.paddlePosition) * 0.1;
+                    if (game.ballZ >= (fieldSize / 2 - paddleDistance) && game.ballVelocityZ > 0) {
+                        if (player.isAlive) {
+                            if (Math.abs(game.ballX - player.paddlePosition) <= paddleSize / 2) {
+                                game.ballVelocityZ = -Math.abs(game.ballVelocityZ);
+                                game.ballVelocityX += (game.ballX - player.paddlePosition) * 0.1;
+                                collisionOccurred = true;
+                            }
+                        }
+                        else {
+                            if (game.ballZ >= fieldSize / 2) {
+                                game.ballVelocityZ = -Math.abs(game.ballVelocityZ);
+                                collisionOccurred = true;
+                            }
                         }
                     }
                     break;
                 case 'bottom':
-                    if (game.ballZ <= -fieldSize / 2 + 0.5 && game.ballZ >= -fieldSize / 2 - 0.5) {
-                        if (Math.abs(game.ballX - player.paddlePosition) <= paddleSize / 2) {
-                            game.ballVelocityZ = Math.abs(game.ballVelocityZ);
-                            game.ballVelocityX += (game.ballX - player.paddlePosition) * 0.1;
+                    if (game.ballZ <= -(fieldSize / 2 - paddleDistance) && game.ballVelocityZ < 0) {
+                        if (player.isAlive) {
+                            if (Math.abs(game.ballX - player.paddlePosition) <= paddleSize / 2) {
+                                game.ballVelocityZ = Math.abs(game.ballVelocityZ);
+                                game.ballVelocityX += (game.ballX - player.paddlePosition) * 0.1;
+                                collisionOccurred = true;
+                            }
+                        }
+                        else {
+                            if (game.ballZ <= -fieldSize / 2) {
+                                game.ballVelocityZ = Math.abs(game.ballVelocityZ);
+                                collisionOccurred = true;
+                            }
                         }
                     }
                     break;
             }
-            // 速度制限
-            const maxSpeed = 0.3;
-            game.ballVelocityX = Math.max(-maxSpeed, Math.min(maxSpeed, game.ballVelocityX));
-            game.ballVelocityZ = Math.max(-maxSpeed, Math.min(maxSpeed, game.ballVelocityZ));
         });
+        // 速度制限
+        const maxSpeed = 0.3;
+        game.ballVelocityX = Math.max(-maxSpeed, Math.min(maxSpeed, game.ballVelocityX));
+        game.ballVelocityZ = Math.max(-maxSpeed, Math.min(maxSpeed, game.ballVelocityZ));
     }
-    // 4人対戦用の境界チェック
+    // 4人対戦用の境界チェック（生きているプレイヤーのみライフを失う）
     checkBounds4Player(game) {
-        const fieldSize = 10;
-        // ボールが境界を越えた場合、該当するプレイヤーのライフを減らす
-        if (game.ballX < -fieldSize / 2) {
-            this.playerLoseLife(game, 'left');
+        const fieldSize = 20;
+        const boundary = fieldSize / 2 + 0.3; // ボールが端を越えた時に判定（少し余裕を持たせる）
+        // ボールが境界を越えた場合、該当するプレイヤーがまだ生きていればライフを減らす
+        if (game.ballX < -boundary) {
+            const leftPlayer = Object.values(game.players).find(p => p.side === 'left');
+            if (leftPlayer && leftPlayer.isAlive) {
+                this.playerLoseLife(game, 'left');
+            }
         }
-        else if (game.ballX > fieldSize / 2) {
-            this.playerLoseLife(game, 'right');
+        else if (game.ballX > boundary) {
+            const rightPlayer = Object.values(game.players).find(p => p.side === 'right');
+            if (rightPlayer && rightPlayer.isAlive) {
+                this.playerLoseLife(game, 'right');
+            }
         }
-        else if (game.ballZ > fieldSize / 2) {
-            this.playerLoseLife(game, 'top');
+        else if (game.ballZ > boundary) {
+            const topPlayer = Object.values(game.players).find(p => p.side === 'top');
+            if (topPlayer && topPlayer.isAlive) {
+                this.playerLoseLife(game, 'top');
+            }
         }
-        else if (game.ballZ < -fieldSize / 2) {
-            this.playerLoseLife(game, 'bottom');
+        else if (game.ballZ < -boundary) {
+            const bottomPlayer = Object.values(game.players).find(p => p.side === 'bottom');
+            if (bottomPlayer && bottomPlayer.isAlive) {
+                this.playerLoseLife(game, 'bottom');
+            }
         }
     }
     playerLoseLife(game, side) {

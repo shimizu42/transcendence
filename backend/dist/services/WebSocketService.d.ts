@@ -1,11 +1,14 @@
 import { WebSocket } from 'ws';
 import { UserService } from './UserService';
 import { GameService } from './GameService';
+import { TankGameService } from './TankGameService';
 export declare class WebSocketService {
     private connections;
     private userService;
     private gameService;
-    constructor(userService: UserService, gameService: GameService);
+    private tankGameService;
+    private tournamentService;
+    constructor(userService: UserService, gameService: GameService, tankGameService: TankGameService);
     handleConnection(connection: WebSocket, request: any): void;
     private handleMessage;
     private handleAuthentication;
@@ -23,6 +26,22 @@ export declare class WebSocketService {
     private broadcastUserUpdate;
     private findConnectionByUserId;
     private sendToConnection;
+    private handleTankGameInvite;
+    private handleTankGameInviteResponse;
+    private handleJoinTankQueue4Player;
+    private handleLeaveTankQueue4Player;
+    private handleJoinTankGame;
+    private handleTankControls;
+    private handleRestartTankGame;
+    private handleLeaveTankGame;
+    private startTankGame;
+    private startTankGameStateUpdates;
+    private sendTankGameState;
+    private sendTankGameEnd;
+    private handleJoinTournament;
+    private handleLeaveTournament;
+    private startNextTournamentMatch;
+    private startTournamentGameStateUpdates;
     private generateConnectionId;
 }
 //# sourceMappingURL=WebSocketService.d.ts.map

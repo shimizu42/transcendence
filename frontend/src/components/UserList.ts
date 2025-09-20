@@ -10,16 +10,18 @@ export class UserList {
   private users: User[] = [];
   private onGameStart: (gameId: string) => void;
   private onTankGameStart: (gameId: string) => void;
+  private onTournamentStart: () => void;
   private inQueue4Player: boolean = false;
   private inTankQueue4Player: boolean = false;
 
-  constructor(container: HTMLElement, currentUser: User, wsService: WebSocketService, onGameStart: (gameId: string) => void, onTankGameStart?: (gameId: string) => void) {
+  constructor(container: HTMLElement, currentUser: User, wsService: WebSocketService, onGameStart: (gameId: string) => void, onTankGameStart?: (gameId: string) => void, onTournamentStart?: () => void) {
     this.container = container;
     this.apiService = new ApiService();
     this.wsService = wsService;
     this.currentUser = currentUser;
     this.onGameStart = onGameStart;
     this.onTankGameStart = onTankGameStart || onGameStart;
+    this.onTournamentStart = onTournamentStart || (() => {});
   }
 
   async init(): Promise<void> {
@@ -99,9 +101,19 @@ export class UserList {
                 </button>
               </div>
             </div>
-            
+
             <div class="bg-gray-700 rounded-lg p-4 mb-4">
-              <h2 class="text-xl font-semibold text-white mb-4">Pong Game Modes</h2>
+              <h2 class="text-xl font-semibold text-white mb-4">Game Modes</h2>
+
+              <!-- Tournament Mode -->
+              <div class="bg-gradient-to-r from-purple-600 to-blue-600 p-4 rounded-lg mb-4">
+                <h3 class="text-xl font-bold text-white mb-2">🏆 Tournament Mode</h3>
+                <p class="text-purple-100 text-sm mb-3">4-player tournament: Semifinals → Final → Champion!</p>
+                <button id="start-tournament" class="bg-yellow-500 hover:bg-yellow-600 text-black px-6 py-3 rounded-lg font-bold w-full">
+                  🎯 Join Tournament
+                </button>
+              </div>
+
               <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                 <div class="bg-gray-600 p-4 rounded-lg">
                   <h3 class="text-lg font-bold text-white mb-2">4-Player Pong Battle</h3>
@@ -264,6 +276,13 @@ export class UserList {
         this.inTankQueue4Player = true;
         this.updateTankQueueButton();
       }
+    });
+
+    // Tournament mode button
+    const startTournamentBtn = document.getElementById('start-tournament')!;
+    startTournamentBtn.addEventListener('click', () => {
+      console.log('Starting tournament mode');
+      this.onTournamentStart();
     });
   }
 

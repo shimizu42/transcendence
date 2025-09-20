@@ -42,3 +42,25 @@ export interface Game {
   alivePlayers: string[];
   createdAt: Date;
 }
+
+export interface TournamentMatch {
+  id: string;
+  round: number;
+  matchNumber: number;
+  player1Id?: string;
+  player2Id?: string;
+  winnerId?: string;
+  gameId?: string;
+  status: 'waiting' | 'playing' | 'finished';
+  createdAt: Date;
+}
+
+export interface Tournament {
+  id: string;
+  playerIds: string[];
+  matches: TournamentMatch[];
+  currentRound: number;
+  status: 'waiting' | 'semifinal' | 'final' | 'finished';
+  winnerId?: string;
+  createdAt: Date;
+}

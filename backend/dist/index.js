@@ -10,6 +10,7 @@ const users_1 = require("./routes/users");
 const game_1 = require("./routes/game");
 const UserService_1 = require("./services/UserService");
 const GameService_1 = require("./services/GameService");
+const TankGameService_1 = require("./services/TankGameService");
 const WebSocketService_1 = require("./services/WebSocketService");
 const fastify = (0, fastify_1.default)({
     logger: true
@@ -30,7 +31,8 @@ fastify.addHook('preHandler', async (request, reply) => {
 });
 const userService = new UserService_1.UserService();
 const gameService = new GameService_1.GameService();
-const webSocketService = new WebSocketService_1.WebSocketService(userService, gameService);
+const tankGameService = new TankGameService_1.TankGameService();
+const webSocketService = new WebSocketService_1.WebSocketService(userService, gameService, tankGameService);
 fastify.register(async function (fastify) {
     // Pass userService and gameService to routes
     fastify.decorate('userService', userService);

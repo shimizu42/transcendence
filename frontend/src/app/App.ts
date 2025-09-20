@@ -1,5 +1,6 @@
 import { LoginForm } from '../components/LoginForm';
 import { UserList } from '../components/UserList';
+import { Tournament } from '../components/Tournament';
 import { PongGame } from '../game/PongGame';
 import { TankGame } from '../game/TankGame';
 import { WebSocketService } from '../services/WebSocketService';
@@ -11,7 +12,9 @@ export class App {
   private currentUser: User | null = null;
   private currentGame: PongGame | null = null;
   private currentTankGame: TankGame | null = null;
+  private tournament: Tournament | null = null;
   private resizeHandler: (() => void) | null = null;
+  private inTournament: boolean = false;
 
   constructor() {
     this.container = document.getElementById('app')!;
@@ -55,7 +58,8 @@ export class App {
         this.currentUser!,
         this.wsService,
         (gameId: string) => this.startGame(gameId),
-        (gameId: string) => this.startTankGame(gameId)
+        (gameId: string) => this.startTankGame(gameId),
+        () => this.showTournament()
       );
       
       await userList.init();
@@ -157,7 +161,18 @@ export class App {
       this.resizeHandler = null;
     }
 
-    this.showUserList();
+    // トーナメント中ならトーナメント画面に戻る、そうでなければメイン画面へ
+    if (this.inTournament) {
+      if (this.tournament) {
+        // 既存のトーナメントコンポーネントに戻る
+        this.tournament.returnFromGame();
+      } else {
+        // トーナメントコンポーネントが存在しない場合は新規作成
+        this.showTournament();
+      }
+    } else {
+      this.showUserList();
+    }
   }
 
   private async startTankGame(gameId: string): Promise<void> {
@@ -245,6 +260,24 @@ export class App {
       this.resizeHandler = null;
     }
 
+    this.showUserList();
+  }
+
+  private showTournament(): void {
+    this.inTournament = true;
+    this.tournament = new Tournament(
+      this.container,
+      this.wsService,
+      this.currentUser!,
+      (gameId: string) => this.startGame(gameId),
+      () => this.endTournament()
+    );
+    this.tournament.render();
+  }
+
+  private endTournament(): void {
+    this.inTournament = false;
+    this.tournament = null;
     this.showUserList();
   }
 }

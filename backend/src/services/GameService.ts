@@ -47,6 +47,10 @@ export class GameService {
     return true;
   }
 
+  createPrivateGame(playerIds: string[], gameType: '2player' | '4player' = '2player'): Game {
+    return this.createGame(playerIds, gameType);
+  }
+
   createGame(playerIds: string[], gameType: '2player' | '4player' = '2player'): Game {
     const gameId = crypto.randomUUID();
     const sides = gameType === '4player' 

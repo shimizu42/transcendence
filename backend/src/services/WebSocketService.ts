@@ -3,6 +3,7 @@ import { WebSocket } from 'ws';
 import { UserService } from './UserService';
 import { GameService } from './GameService';
 import { TankGameService } from './TankGameService';
+import { TournamentService } from './TournamentService';
 import { verifyToken } from '../middleware/auth';
 
 interface SocketConnection {
@@ -15,11 +16,13 @@ export class WebSocketService {
   private userService: UserService;
   private gameService: GameService;
   private tankGameService: TankGameService;
+  private tournamentService: TournamentService;
 
   constructor(userService: UserService, gameService: GameService, tankGameService: TankGameService) {
     this.userService = userService;
     this.gameService = gameService;
     this.tankGameService = tankGameService;
+    this.tournamentService = new TournamentService(gameService);
   }
 
   handleConnection(connection: WebSocket, request: any): void {
@@ -102,6 +105,13 @@ export class WebSocketService {
         break;
       case 'leaveTankGame':
         this.handleLeaveTankGame(connectionId, message.data);
+        break;
+      // Tournament handlers
+      case 'joinTournament':
+        this.handleJoinTournament(connectionId, message.data);
+        break;
+      case 'leaveTournament':
+        this.handleLeaveTournament(connectionId, message.data);
         break;
     }
   }
@@ -646,6 +656,152 @@ export class WebSocketService {
         this.sendToConnection(playerConnection, 'tankGameEnd', endData);
       }
     });
+  }
+
+  // Tournament Handlers
+  private handleJoinTournament(connectionId: string, _data: any): void {
+    console.log('WebSocket: Handling join tournament for connection', connectionId);
+    const connection = this.connections.get(connectionId);
+    if (!connection || !connection.userId) {
+      console.error('WebSocket: Invalid connection for join tournament', connectionId);
+      return;
+    }
+
+    const result = this.tournamentService.joinTournamentQueue(connection.userId);
+
+    if (result.tournament) {
+      console.log('WebSocket: Tournament created', result.tournament.id);
+
+      // トーナメント開始時に全プレイヤーに状態を送信
+      result.tournament.playerIds.forEach(playerId => {
+        const playerConnection = this.findConnectionByUserId(playerId);
+        if (playerConnection) {
+          this.sendToConnection(playerConnection, 'tournamentStart', result.tournament);
+        }
+      });
+
+      // 自動的に最初の試合を開始
+      setTimeout(() => {
+        this.startNextTournamentMatch(result.tournament!.id);
+      }, 2000); // 2秒待ってから開始
+    } else {
+      // 待機中の状態を送信
+      this.sendToConnection(connectionId, 'tournamentQueue', { position: result.position });
+    }
+  }
+
+  private handleLeaveTournament(connectionId: string, _data: any): void {
+    const connection = this.connections.get(connectionId);
+    if (!connection || !connection.userId) return;
+
+    this.tournamentService.leaveTournamentQueue(connection.userId);
+    this.sendToConnection(connectionId, 'tournamentLeft', {});
+  }
+
+  private startNextTournamentMatch(tournamentId: string): void {
+    const tournament = this.tournamentService.getTournament(tournamentId);
+    if (!tournament) return;
+
+    const nextMatch = this.tournamentService.getNextMatch(tournamentId);
+    if (nextMatch && nextMatch.player1Id && nextMatch.player2Id) {
+      console.log('WebSocket: Starting tournament match', nextMatch.id);
+
+      // ゲームを作成（2人用）
+      const gameId = this.tournamentService.startMatch(tournamentId, nextMatch.id);
+
+      if (gameId) {
+        const game = this.gameService.getGame(gameId);
+        if (!game) return;
+
+        // プレイヤーをゲーム中に設定
+        game.playerIds.forEach((playerId: string) => {
+          this.userService.setUserInGame(playerId, true);
+        });
+
+        // プレイヤーに試合開始を通知（通常のゲーム開始と同じ）
+        game.playerIds.forEach((playerId: string, index: number) => {
+          const playerConnection = this.findConnectionByUserId(playerId);
+          if (playerConnection) {
+            this.sendToConnection(playerConnection, 'gameStart', {
+              gameId: gameId
+            });
+
+            // プレイヤー割り当て
+            const player = game.players[playerId];
+            this.sendToConnection(playerConnection, 'playerAssignment', {
+              playerId: playerId,
+              playerNumber: index + 1,
+              side: player.side
+            });
+          }
+        });
+
+        // ゲーム状態更新開始
+        this.startTournamentGameStateUpdates(gameId, tournamentId, nextMatch.id);
+        this.broadcastUserUpdate();
+
+        // トーナメント状態を更新
+        const updatedTournament = this.tournamentService.getTournament(tournamentId);
+        if (updatedTournament) {
+          updatedTournament.playerIds.forEach(playerId => {
+            const playerConnection = this.findConnectionByUserId(playerId);
+            if (playerConnection) {
+              this.sendToConnection(playerConnection, 'tournamentUpdate', updatedTournament);
+            }
+          });
+        }
+      }
+    }
+  }
+
+  private startTournamentGameStateUpdates(gameId: string, tournamentId: string, matchId: string): void {
+    const interval = setInterval(() => {
+      const game = this.gameService.getGame(gameId);
+      if (!game || game.status === 'finished') {
+        clearInterval(interval);
+        if (game && game.status === 'finished') {
+          // 試合完了処理
+          this.tournamentService.finishMatch(tournamentId, matchId, game.winner!);
+
+          // プレイヤーをゲーム外に設定
+          game.playerIds.forEach((playerId: string) => {
+            this.userService.setUserInGame(playerId, false);
+          });
+
+          const tournament = this.tournamentService.getTournament(tournamentId);
+          if (tournament) {
+            // トーナメント状態を全プレイヤーに送信
+            tournament.playerIds.forEach(playerId => {
+              const playerConnection = this.findConnectionByUserId(playerId);
+              if (playerConnection) {
+                this.sendToConnection(playerConnection, 'tournamentUpdate', tournament);
+              }
+            });
+
+            if (tournament.status === 'finished') {
+              // トーナメント完了
+              tournament.playerIds.forEach(playerId => {
+                const playerConnection = this.findConnectionByUserId(playerId);
+                if (playerConnection) {
+                  this.sendToConnection(playerConnection, 'tournamentCompleted', {
+                    winnerId: tournament.winnerId
+                  });
+                }
+              });
+            } else {
+              // 次の試合を自動開始
+              setTimeout(() => {
+                this.startNextTournamentMatch(tournamentId);
+              }, 3000); // 3秒待機してから次の試合
+            }
+          }
+
+          this.broadcastUserUpdate();
+        }
+        return;
+      }
+      this.sendGameState(gameId);
+    }, 16);
   }
 
   private generateConnectionId(): string {

@@ -8,6 +8,7 @@ export declare class GameService {
     getInvitation(id: string): GameInvitation | undefined;
     acceptInvitation(id: string): Game | null;
     declineInvitation(id: string): boolean;
+    createPrivateGame(playerIds: string[], gameType?: '2player' | '4player'): Game;
     createGame(playerIds: string[], gameType?: '2player' | '4player'): Game;
     getGame(id: string): Game | undefined;
     startGame(gameId: string): boolean;
