@@ -6,7 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.TankGameService = void 0;
 const crypto_1 = __importDefault(require("crypto"));
 class TankGameService {
-    constructor() {
+    constructor(userService) {
         this.games = new Map();
         this.gameIntervals = new Map();
         this.invitations = new Map();
@@ -18,6 +18,7 @@ class TankGameService {
         this.BULLET_LIFETIME = 5000; // 5秒
         this.SHOT_COOLDOWN = 500; // 0.5秒
         this.INITIAL_LIVES = 3;
+        this.userService = userService;
     }
     createGame(playerIds, gameType = '2player') {
         const gameId = crypto_1.default.randomUUID();

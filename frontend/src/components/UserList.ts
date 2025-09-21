@@ -1,6 +1,10 @@
 import { User } from '../types/User';
 import { ApiService } from '../services/ApiService';
 import { WebSocketService } from '../services/WebSocketService';
+import { Profile } from './Profile';
+import { Friends } from './Friends';
+import { MatchHistory } from './MatchHistory';
+import { Stats } from './Stats';
 
 export class UserList {
   private container: HTMLElement;
@@ -96,6 +100,18 @@ export class UserList {
               <h1 class="text-3xl font-bold text-white">Transcendence Pong</h1>
               <div class="flex items-center space-x-4">
                 <span class="text-green-400">Welcome, ${this.currentUser.username}!</span>
+                <button id="profile-btn" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded">
+                  👤 Profile
+                </button>
+                <button id="friends-btn" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded">
+                  👥 Friends
+                </button>
+                <button id="match-history-btn" class="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded">
+                  📊 History
+                </button>
+                <button id="stats-btn" class="bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2 rounded">
+                  🏆 Stats
+                </button>
                 <button id="logout-btn" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded">
                   Logout
                 </button>
@@ -247,6 +263,26 @@ export class UserList {
       location.reload();
     });
 
+    const profileBtn = document.getElementById('profile-btn')!;
+    profileBtn.addEventListener('click', () => {
+      this.showProfile();
+    });
+
+    const friendsBtn = document.getElementById('friends-btn')!;
+    friendsBtn.addEventListener('click', () => {
+      this.showFriends();
+    });
+
+    const matchHistoryBtn = document.getElementById('match-history-btn')!;
+    matchHistoryBtn.addEventListener('click', () => {
+      this.showMatchHistory();
+    });
+
+    const statsBtn = document.getElementById('stats-btn')!;
+    statsBtn.addEventListener('click', () => {
+      this.showStats();
+    });
+
     const join4PlayerBtn = document.getElementById('join-4player-queue')!;
     join4PlayerBtn.addEventListener('click', () => {
       if (this.inQueue4Player) {
@@ -382,5 +418,33 @@ export class UserList {
       button.className = 'bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded-lg font-bold w-full mb-2';
       queueInfo.textContent = 'Click to join the 4-player tank queue!';
     }
+  }
+
+  private showProfile(): void {
+    const profile = new Profile(this.container, this.currentUser, () => {
+      this.render();
+    });
+    profile.render();
+  }
+
+  private showFriends(): void {
+    const friends = new Friends(this.container, this.currentUser, () => {
+      this.render();
+    });
+    friends.render();
+  }
+
+  private showMatchHistory(): void {
+    const matchHistory = new MatchHistory(this.container, this.currentUser, () => {
+      this.render();
+    });
+    matchHistory.render();
+  }
+
+  private showStats(): void {
+    const stats = new Stats(this.container, this.currentUser, () => {
+      this.render();
+    });
+    stats.render();
   }
 }

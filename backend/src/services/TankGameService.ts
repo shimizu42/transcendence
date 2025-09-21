@@ -68,6 +68,11 @@ export class TankGameService {
   private gameIntervals: Map<string, NodeJS.Timeout> = new Map();
   private invitations: Map<string, TankGameInvitation> = new Map();
   private waitingRoom4Player: string[] = [];
+  private userService: any; // Import UserService properly
+
+  constructor(userService: any) {
+    this.userService = userService;
+  }
 
   private readonly TANK_SPEED = 0.1;
   private readonly TURN_SPEED = 0.05;

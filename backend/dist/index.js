@@ -5,6 +5,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const fastify_1 = __importDefault(require("fastify"));
 const websocket_1 = __importDefault(require("@fastify/websocket"));
+// import staticFiles from '@fastify/static';
 const auth_1 = require("./routes/auth");
 const users_1 = require("./routes/users");
 const game_1 = require("./routes/game");
@@ -12,10 +13,16 @@ const UserService_1 = require("./services/UserService");
 const GameService_1 = require("./services/GameService");
 const TankGameService_1 = require("./services/TankGameService");
 const WebSocketService_1 = require("./services/WebSocketService");
+// import path from 'path';
 const fastify = (0, fastify_1.default)({
     logger: true
 });
 fastify.register(websocket_1.default);
+// Serve static files for uploads and default avatars (temporarily disabled)
+// fastify.register(staticFiles, {
+//   root: path.join(process.cwd(), 'public'),
+//   prefix: '/public/'
+// });
 // Add CORS support globally
 fastify.addHook('onRequest', async (request, reply) => {
     reply.header('Access-Control-Allow-Origin', '*');
@@ -30,8 +37,8 @@ fastify.addHook('preHandler', async (request, reply) => {
     }
 });
 const userService = new UserService_1.UserService();
-const gameService = new GameService_1.GameService();
-const tankGameService = new TankGameService_1.TankGameService();
+const gameService = new GameService_1.GameService(userService);
+const tankGameService = new TankGameService_1.TankGameService(userService);
 const webSocketService = new WebSocketService_1.WebSocketService(userService, gameService, tankGameService);
 fastify.register(async function (fastify) {
     // Pass userService and gameService to routes

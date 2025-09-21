@@ -65,6 +65,8 @@ export declare class TankGameService {
     private gameIntervals;
     private invitations;
     private waitingRoom4Player;
+    private userService;
+    constructor(userService: any);
     private readonly TANK_SPEED;
     private readonly TURN_SPEED;
     private readonly TURRET_TURN_SPEED;

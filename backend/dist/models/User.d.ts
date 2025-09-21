@@ -2,9 +2,60 @@ export interface User {
     id: string;
     username: string;
     password: string;
+    email?: string;
+    displayName?: string;
+    bio?: string;
+    avatar?: string;
     isOnline: boolean;
     isInGame: boolean;
     socketId?: string;
+    friends: string[];
+    friendRequests: FriendRequest[];
+    stats: UserStats;
+    createdAt: Date;
+    lastLoginAt?: Date;
+}
+export interface FriendRequest {
+    id: string;
+    fromUserId: string;
+    toUserId: string;
+    status: 'pending' | 'accepted' | 'declined';
+    createdAt: Date;
+}
+export interface UserStats {
+    totalGames: number;
+    wins: number;
+    losses: number;
+    winRate: number;
+    pongStats: GameTypeStats;
+    tankStats: GameTypeStats;
+    tournamentWins: number;
+    longestWinStreak: number;
+    currentWinStreak: number;
+}
+export interface GameTypeStats {
+    gamesPlayed: number;
+    wins: number;
+    losses: number;
+    winRate: number;
+    averageGameDuration: number;
+    bestScore: number;
+}
+export interface MatchHistory {
+    id: string;
+    gameId: string;
+    gameType: 'pong' | 'tank';
+    gameMode: '2player' | '4player' | 'tournament';
+    playerId: string;
+    opponentIds: string[];
+    opponentNames: string[];
+    result: 'win' | 'loss';
+    score: number;
+    opponentScores: number[];
+    duration: number;
+    datePlayed: Date;
+    isRanked: boolean;
+    tournamentId?: string;
 }
 export interface GameInvitation {
     id: string;

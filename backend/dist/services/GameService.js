@@ -6,11 +6,12 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.GameService = void 0;
 const crypto_1 = __importDefault(require("crypto"));
 class GameService {
-    constructor() {
+    constructor(userService) {
         this.games = new Map();
         this.invitations = new Map();
         this.gameIntervals = new Map();
         this.waitingRoom4Player = []; // 4人対戦待機中のプレイヤーID
+        this.userService = userService;
     }
     createInvitation(fromUserId, toUserId) {
         const invitation = {
