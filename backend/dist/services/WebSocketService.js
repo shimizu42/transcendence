@@ -10,7 +10,7 @@ class WebSocketService {
         this.userService = userService;
         this.gameService = gameService;
         this.tankGameService = tankGameService;
-        this.tournamentService = new TournamentService_1.TournamentService(gameService);
+        this.tournamentService = new TournamentService_1.TournamentService(gameService, tankGameService);
     }
     handleConnection(connection, request) {
         const connectionId = this.generateConnectionId();
@@ -588,14 +588,15 @@ class WebSocketService {
         });
     }
     // Tournament Handlers
-    handleJoinTournament(connectionId, _data) {
+    handleJoinTournament(connectionId, data) {
         console.log('WebSocket: Handling join tournament for connection', connectionId);
         const connection = this.connections.get(connectionId);
         if (!connection || !connection.userId) {
             console.error('WebSocket: Invalid connection for join tournament', connectionId);
             return;
         }
-        const result = this.tournamentService.joinTournamentQueue(connection.userId);
+        const gameType = data.gameType || 'pong';
+        const result = this.tournamentService.joinTournamentQueue(connection.userId, gameType);
         if (result.tournament) {
             console.log('WebSocket: Tournament created', result.tournament.id);
             // トーナメント開始時に全プレイヤーに状態を送信
@@ -632,27 +633,47 @@ class WebSocketService {
             // ゲームを作成（2人用）
             const gameId = this.tournamentService.startMatch(tournamentId, nextMatch.id);
             if (gameId) {
-                const game = this.gameService.getGame(gameId);
+                const tournament = this.tournamentService.getTournament(tournamentId);
+                const game = tournament?.gameType === 'tank'
+                    ? this.tankGameService.getGame(gameId)
+                    : this.gameService.getGame(gameId);
                 if (!game)
                     return;
                 // プレイヤーをゲーム中に設定
                 game.playerIds.forEach((playerId) => {
                     this.userService.setUserInGame(playerId, true);
                 });
-                // プレイヤーに試合開始を通知（通常のゲーム開始と同じ）
+                // プレイヤーに試合開始を通知（ゲームタイプに応じて）
+                const tournamentData = this.tournamentService.getTournament(tournamentId);
                 game.playerIds.forEach((playerId, index) => {
                     const playerConnection = this.findConnectionByUserId(playerId);
                     if (playerConnection) {
-                        this.sendToConnection(playerConnection, 'gameStart', {
-                            gameId: gameId
-                        });
+                        if (tournamentData?.gameType === 'tank') {
+                            this.sendToConnection(playerConnection, 'tankGameStart', {
+                                gameId: gameId
+                            });
+                        }
+                        else {
+                            this.sendToConnection(playerConnection, 'gameStart', {
+                                gameId: gameId
+                            });
+                        }
                         // プレイヤー割り当て
                         const player = game.players[playerId];
-                        this.sendToConnection(playerConnection, 'playerAssignment', {
-                            playerId: playerId,
-                            playerNumber: index + 1,
-                            side: player.side
-                        });
+                        if (tournamentData?.gameType === 'tank') {
+                            this.sendToConnection(playerConnection, 'tankPlayerAssignment', {
+                                playerId: playerId,
+                                playerNumber: index + 1,
+                                side: player.side
+                            });
+                        }
+                        else {
+                            this.sendToConnection(playerConnection, 'playerAssignment', {
+                                playerId: playerId,
+                                playerNumber: index + 1,
+                                side: player.side
+                            });
+                        }
                     }
                 });
                 // ゲーム状態更新開始
@@ -673,7 +694,10 @@ class WebSocketService {
     }
     startTournamentGameStateUpdates(gameId, tournamentId, matchId) {
         const interval = setInterval(() => {
-            const game = this.gameService.getGame(gameId);
+            const tournament = this.tournamentService.getTournament(tournamentId);
+            const game = tournament?.gameType === 'tank'
+                ? this.tankGameService.getGame(gameId)
+                : this.gameService.getGame(gameId);
             if (!game || game.status === 'finished') {
                 clearInterval(interval);
                 if (game && game.status === 'finished') {
@@ -714,7 +738,12 @@ class WebSocketService {
                 }
                 return;
             }
-            this.sendGameState(gameId);
+            if (tournament?.gameType === 'tank') {
+                this.sendTankGameState(gameId);
+            }
+            else {
+                this.sendGameState(gameId);
+            }
         }, 16);
     }
     generateConnectionId() {

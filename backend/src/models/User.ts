@@ -57,6 +57,7 @@ export interface TournamentMatch {
 
 export interface Tournament {
   id: string;
+  gameType: 'pong' | 'tank';
   playerIds: string[];
   matches: TournamentMatch[];
   currentRound: number;

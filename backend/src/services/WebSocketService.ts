@@ -22,7 +22,7 @@ export class WebSocketService {
     this.userService = userService;
     this.gameService = gameService;
     this.tankGameService = tankGameService;
-    this.tournamentService = new TournamentService(gameService);
+    this.tournamentService = new TournamentService(gameService, tankGameService);
   }
 
   handleConnection(connection: WebSocket, request: any): void {
@@ -659,7 +659,7 @@ export class WebSocketService {
   }
 
   // Tournament Handlers
-  private handleJoinTournament(connectionId: string, _data: any): void {
+  private handleJoinTournament(connectionId: string, data: { gameType?: 'pong' | 'tank' }): void {
     console.log('WebSocket: Handling join tournament for connection', connectionId);
     const connection = this.connections.get(connectionId);
     if (!connection || !connection.userId) {
@@ -667,7 +667,8 @@ export class WebSocketService {
       return;
     }
 
-    const result = this.tournamentService.joinTournamentQueue(connection.userId);
+    const gameType = data.gameType || 'pong';
+    const result = this.tournamentService.joinTournamentQueue(connection.userId, gameType);
 
     if (result.tournament) {
       console.log('WebSocket: Tournament created', result.tournament.id);
@@ -710,7 +711,10 @@ export class WebSocketService {
       const gameId = this.tournamentService.startMatch(tournamentId, nextMatch.id);
 
       if (gameId) {
-        const game = this.gameService.getGame(gameId);
+        const tournament = this.tournamentService.getTournament(tournamentId);
+        const game = tournament?.gameType === 'tank'
+          ? this.tankGameService.getGame(gameId)
+          : this.gameService.getGame(gameId);
         if (!game) return;
 
         // プレイヤーをゲーム中に設定
@@ -718,21 +722,36 @@ export class WebSocketService {
           this.userService.setUserInGame(playerId, true);
         });
 
-        // プレイヤーに試合開始を通知（通常のゲーム開始と同じ）
+        // プレイヤーに試合開始を通知（ゲームタイプに応じて）
+        const tournamentData = this.tournamentService.getTournament(tournamentId);
         game.playerIds.forEach((playerId: string, index: number) => {
           const playerConnection = this.findConnectionByUserId(playerId);
           if (playerConnection) {
-            this.sendToConnection(playerConnection, 'gameStart', {
-              gameId: gameId
-            });
+            if (tournamentData?.gameType === 'tank') {
+              this.sendToConnection(playerConnection, 'tankGameStart', {
+                gameId: gameId
+              });
+            } else {
+              this.sendToConnection(playerConnection, 'gameStart', {
+                gameId: gameId
+              });
+            }
 
             // プレイヤー割り当て
             const player = game.players[playerId];
-            this.sendToConnection(playerConnection, 'playerAssignment', {
-              playerId: playerId,
-              playerNumber: index + 1,
-              side: player.side
-            });
+            if (tournamentData?.gameType === 'tank') {
+              this.sendToConnection(playerConnection, 'tankPlayerAssignment', {
+                playerId: playerId,
+                playerNumber: index + 1,
+                side: player.side
+              });
+            } else {
+              this.sendToConnection(playerConnection, 'playerAssignment', {
+                playerId: playerId,
+                playerNumber: index + 1,
+                side: player.side
+              });
+            }
           }
         });
 
@@ -756,7 +775,10 @@ export class WebSocketService {
 
   private startTournamentGameStateUpdates(gameId: string, tournamentId: string, matchId: string): void {
     const interval = setInterval(() => {
-      const game = this.gameService.getGame(gameId);
+      const tournament = this.tournamentService.getTournament(tournamentId);
+      const game = tournament?.gameType === 'tank'
+        ? this.tankGameService.getGame(gameId)
+        : this.gameService.getGame(gameId);
       if (!game || game.status === 'finished') {
         clearInterval(interval);
         if (game && game.status === 'finished') {
@@ -800,7 +822,11 @@ export class WebSocketService {
         }
         return;
       }
-      this.sendGameState(gameId);
+      if (tournament?.gameType === 'tank') {
+        this.sendTankGameState(gameId);
+      } else {
+        this.sendGameState(gameId);
+      }
     }, 16);
   }
 

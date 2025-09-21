@@ -270,6 +270,7 @@ export class App {
       this.wsService,
       this.currentUser!,
       (gameId: string) => this.startGame(gameId),
+      (gameId: string) => this.startTankGame(gameId),
       () => this.endTournament()
     );
     this.tournament.render();

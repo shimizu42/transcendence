@@ -1,41 +1,49 @@
 import { Tournament, TournamentMatch } from '../models/User';
 import { GameService } from './GameService';
+import { TankGameService } from './TankGameService';
 import crypto from 'crypto';
 
 export class TournamentService {
   private tournaments: Map<string, Tournament> = new Map();
-  private waitingQueue: string[] = [];
+  private pongWaitingQueue: string[] = [];
+  private tankWaitingQueue: string[] = [];
   private gameService: GameService;
+  private tankGameService: TankGameService;
 
-  constructor(gameService: GameService) {
+  constructor(gameService: GameService, tankGameService: TankGameService) {
     this.gameService = gameService;
+    this.tankGameService = tankGameService;
   }
 
-  joinTournamentQueue(playerId: string): { tournament?: Tournament; position?: number } {
-    if (this.waitingQueue.includes(playerId)) {
-      return { position: this.waitingQueue.indexOf(playerId) + 1 };
+  joinTournamentQueue(playerId: string, gameType: 'pong' | 'tank'): { tournament?: Tournament; position?: number } {
+    const queue = gameType === 'pong' ? this.pongWaitingQueue : this.tankWaitingQueue;
+
+    if (queue.includes(playerId)) {
+      return { position: queue.indexOf(playerId) + 1 };
     }
 
-    this.waitingQueue.push(playerId);
+    queue.push(playerId);
 
-    if (this.waitingQueue.length >= 4) {
-      const players = this.waitingQueue.splice(0, 4);
-      const tournament = this.createTournament(players);
+    if (queue.length >= 4) {
+      const players = queue.splice(0, 4);
+      const tournament = this.createTournament(players, gameType);
       return { tournament };
     }
 
-    return { position: this.waitingQueue.length };
+    return { position: queue.length };
   }
 
   leaveTournamentQueue(playerId: string): void {
-    this.waitingQueue = this.waitingQueue.filter(id => id !== playerId);
+    this.pongWaitingQueue = this.pongWaitingQueue.filter(id => id !== playerId);
+    this.tankWaitingQueue = this.tankWaitingQueue.filter(id => id !== playerId);
   }
 
-  createTournament(playerIds: string[]): Tournament {
+  createTournament(playerIds: string[], gameType: 'pong' | 'tank'): Tournament {
     const tournamentId = crypto.randomUUID();
 
     const tournament: Tournament = {
       id: tournamentId,
+      gameType,
       playerIds: [...playerIds],
       matches: [],
       currentRound: 1,
@@ -81,11 +89,24 @@ export class TournamentService {
     const match = tournament.matches.find(m => m.id === matchId);
     if (!match || !match.player1Id || !match.player2Id) return null;
 
-    const game = this.gameService.createGame([match.player1Id, match.player2Id], '2player');
+    let game;
+    if (tournament.gameType === 'tank') {
+      // Use shared TankGameService instance
+      game = this.tankGameService.createGame([match.player1Id, match.player2Id], '2player');
+    } else {
+      // Pongゲーム
+      game = this.gameService.createGame([match.player1Id, match.player2Id], '2player');
+    }
+
     match.gameId = game.id;
     match.status = 'playing';
 
-    this.gameService.startGame(game.id);
+    if (tournament.gameType === 'tank') {
+      this.tankGameService.startGame(game.id);
+    } else {
+      this.gameService.startGame(game.id);
+    }
+
     return game.id;
   }
 
@@ -151,8 +172,9 @@ export class TournamentService {
     return waitingMatch || null;
   }
 
-  getQueueCount(): number {
-    return this.waitingQueue.length;
+  getQueueCount(gameType: 'pong' | 'tank'): number {
+    const queue = gameType === 'pong' ? this.pongWaitingQueue : this.tankWaitingQueue;
+    return queue.length;
   }
 
   removeTournament(tournamentId: string): void {

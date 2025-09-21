@@ -14,6 +14,7 @@ interface TournamentMatch {
 
 interface TournamentData {
   id: string;
+  gameType: 'pong' | 'tank';
   playerIds: string[];
   matches: TournamentMatch[];
   currentRound: number;
@@ -26,22 +27,26 @@ export class Tournament {
   private wsService: WebSocketService;
   private currentUser: User;
   private onGameStart: (gameId: string) => void;
+  private onTankGameStart: (gameId: string) => void;
   private onExit: () => void;
   private tournament: TournamentData | null = null;
   private queuePosition: number | null = null;
   private isInGame: boolean = false;
+  private selectedGameType: 'pong' | 'tank' = 'pong';
 
   constructor(
     container: HTMLElement,
     wsService: WebSocketService,
     currentUser: User,
     onGameStart: (gameId: string) => void,
+    onTankGameStart: (gameId: string) => void,
     onExit: () => void
   ) {
     this.container = container;
     this.wsService = wsService;
     this.currentUser = currentUser;
     this.onGameStart = onGameStart;
+    this.onTankGameStart = onTankGameStart;
     this.onExit = onExit;
 
     this.setupEventListeners();
@@ -72,11 +77,19 @@ export class Tournament {
     });
 
     this.wsService.on('gameStart', (data: { gameId: string }) => {
-      console.log('Tournament game starting for me:', data);
+      console.log('Tournament pong game starting for me:', data);
       // ゲーム中フラグを設定
       this.isInGame = true;
       // 自分の試合が始まったのでゲーム画面に遷移
       this.onGameStart(data.gameId);
+    });
+
+    this.wsService.on('tankGameStart', (data: { gameId: string }) => {
+      console.log('Tournament tank game starting for me:', data);
+      // ゲーム中フラグを設定
+      this.isInGame = true;
+      // 自分の試合が始まったのでタンクゲーム画面に遷移
+      this.onTankGameStart(data.gameId);
     });
 
     this.wsService.on('tournamentMatchStart', (data: { gameId: string; matchId: string; round: number }) => {
@@ -163,6 +176,23 @@ export class Tournament {
             Winners advance automatically!
           </p>
 
+          <!-- Game Type Selection -->
+          <div class="mb-6">
+            <h3 class="text-lg font-semibold mb-4 text-white">Select Game Type</h3>
+            <div class="grid grid-cols-2 gap-4 mb-6">
+              <button id="select-pong" class="game-type-btn ${this.selectedGameType === 'pong' ? 'selected' : ''} p-4 rounded-lg border-2 transition-all">
+                <div class="text-2xl mb-2">🏓</div>
+                <div class="font-semibold">Pong</div>
+                <div class="text-sm text-gray-300">Classic 3D Pong Battle</div>
+              </button>
+              <button id="select-tank" class="game-type-btn ${this.selectedGameType === 'tank' ? 'selected' : ''} p-4 rounded-lg border-2 transition-all">
+                <div class="text-2xl mb-2">🚗</div>
+                <div class="font-semibold">Tank</div>
+                <div class="text-sm text-gray-300">Tank Combat Arena</div>
+              </button>
+            </div>
+          </div>
+
           <div class="mb-8">
             <div class="inline-flex items-center space-x-4 text-lg">
               <span class="bg-blue-600 px-4 py-2 rounded">1st Match</span>
@@ -174,10 +204,27 @@ export class Tournament {
           </div>
 
           <button id="join-tournament" class="bg-gradient-to-r from-yellow-500 to-orange-500 hover:from-yellow-600 hover:to-orange-600 text-white px-8 py-3 rounded-lg text-lg font-semibold transition-all transform hover:scale-105">
-            Join Tournament Queue
+            Join ${this.selectedGameType === 'pong' ? 'Pong' : 'Tank'} Tournament
           </button>
         </div>
       </div>
+
+      <style>
+        .game-type-btn {
+          border-color: rgba(75, 85, 99, 0.5);
+          background-color: rgba(31, 41, 55, 0.5);
+          color: #D1D5DB;
+        }
+        .game-type-btn:hover {
+          border-color: rgba(156, 163, 175, 0.8);
+          background-color: rgba(55, 65, 81, 0.8);
+        }
+        .game-type-btn.selected {
+          border-color: #F59E0B;
+          background-color: rgba(245, 158, 11, 0.2);
+          color: white;
+        }
+      </style>
     `;
   }
 
@@ -406,11 +453,28 @@ export class Tournament {
   }
 
   private setupButtonListeners(): void {
+    // Game type selection
+    const selectPongBtn = document.getElementById('select-pong');
+    if (selectPongBtn) {
+      selectPongBtn.addEventListener('click', () => {
+        this.selectedGameType = 'pong';
+        this.render();
+      });
+    }
+
+    const selectTankBtn = document.getElementById('select-tank');
+    if (selectTankBtn) {
+      selectTankBtn.addEventListener('click', () => {
+        this.selectedGameType = 'tank';
+        this.render();
+      });
+    }
+
     const joinBtn = document.getElementById('join-tournament');
     if (joinBtn) {
       joinBtn.addEventListener('click', () => {
-        console.log('Joining tournament...');
-        this.wsService.send('joinTournament', {});
+        console.log('Joining tournament...', this.selectedGameType);
+        this.wsService.send('joinTournament', { gameType: this.selectedGameType });
       });
     }
 
@@ -438,6 +502,7 @@ export class Tournament {
     this.wsService.off('tournamentQueue');
     this.wsService.off('tournamentUpdate');
     this.wsService.off('gameStart');
+    this.wsService.off('tankGameStart');
     this.wsService.off('tournamentMatchStart');
     this.wsService.off('tournamentCompleted');
     this.wsService.off('tournamentLeft');
