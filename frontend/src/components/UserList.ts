@@ -279,8 +279,8 @@ export class UserList {
     });
 
     const statsBtn = document.getElementById('stats-btn')!;
-    statsBtn.addEventListener('click', () => {
-      this.showStats();
+    statsBtn.addEventListener('click', async () => {
+      await this.showStats();
     });
 
     const join4PlayerBtn = document.getElementById('join-4player-queue')!;
@@ -441,10 +441,27 @@ export class UserList {
     matchHistory.render();
   }
 
-  private showStats(): void {
-    const stats = new Stats(this.container, this.currentUser, () => {
-      this.render();
-    });
-    stats.render();
+  private async showStats(): Promise<void> {
+    try {
+      // Refresh current user data before showing stats
+      console.log('Refreshing user data before showing stats...');
+      const updatedUser = await this.apiService.getCurrentUser();
+      this.currentUser = updatedUser;
+
+      // Update localStorage with fresh user data
+      localStorage.setItem('user', JSON.stringify(updatedUser));
+
+      const stats = new Stats(this.container, this.currentUser, () => {
+        this.render();
+      });
+      await stats.render();
+    } catch (error) {
+      console.error('Failed to refresh user data for stats:', error);
+      // Fallback to showing stats with current user data
+      const stats = new Stats(this.container, this.currentUser, () => {
+        this.render();
+      });
+      await stats.render();
+    }
   }
 }

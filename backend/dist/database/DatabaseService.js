@@ -99,6 +99,37 @@ class DatabaseService {
             }
             return { changes: 0 };
         }
+        if (sql.includes('UPDATE user_stats SET')) {
+            const stats = this.tables.get('user_stats');
+            const userId = params[6]; // user_id is the last parameter
+            const stat = stats.find(s => s.user_id === userId);
+            if (stat) {
+                stat.total_games = params[0];
+                stat.wins = params[1];
+                stat.losses = params[2];
+                stat.win_rate = params[3];
+                stat.longest_win_streak = params[4];
+                stat.current_win_streak = params[5];
+                return { changes: 1 };
+            }
+            return { changes: 0 };
+        }
+        if (sql.includes('UPDATE game_type_stats SET')) {
+            const gameStats = this.tables.get('game_type_stats');
+            const userId = params[6]; // user_id is the 7th parameter
+            const gameType = params[7]; // game_type is the 8th parameter
+            const stat = gameStats.find(s => s.user_id === userId && s.game_type === gameType);
+            if (stat) {
+                stat.games_played = params[0];
+                stat.wins = params[1];
+                stat.losses = params[2];
+                stat.win_rate = params[3];
+                stat.average_game_duration = params[4];
+                stat.best_score = params[5];
+                return { changes: 1 };
+            }
+            return { changes: 0 };
+        }
         return { lastInsertRowid: 0, changes: 0 };
     }
     get(sql, params = []) {

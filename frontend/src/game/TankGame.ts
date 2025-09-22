@@ -219,6 +219,12 @@ export class TankGame {
       }
     });
 
+    // Listen for tank game end event from backend
+    this.wsService.on('tankGameEnd', (data: { winner: string; winnerId: string; gameId: string; showVictoryScreen: boolean }) => {
+      console.log('Tank game ended:', data);
+      this.showGameEndModal(data.winner);
+    });
+
     this.wsService.on('tankPlayerAssignment', (data: { playerId: string; playerNumber: number; side?: string }) => {
       console.log('Tank player assignment received:', data);
       if (data.playerId === this.playerId) {

@@ -1,4 +1,4 @@
-import { User } from '../models/User';
+import { User, FriendRequest } from '../models/User';
 export declare class UserService {
     private db;
     private saltRounds;
@@ -14,6 +14,12 @@ export declare class UserService {
     validatePassword(username: string, password: string): Promise<boolean>;
     authenticateUser(username: string, password: string): User | null;
     private convertDbUserToUser;
+    updateUserStats(userId: string, gameType: 'pong' | 'tank', won: boolean, gameDuration?: number, score?: number): void;
+    recordMatchResult(playerIds: string[], winnerId: string, gameType: 'pong' | 'tank', gameDuration?: number): void;
+    createFriendRequest(fromUserId: string, toUserId: string): FriendRequest;
+    getFriendRequests(userId: string): FriendRequest[];
+    respondToFriendRequest(requestId: string, userId: string, response: 'accepted' | 'declined'): void;
+    getFriends(userId: string): User[];
     private hashPassword;
 }
 //# sourceMappingURL=UserService.d.ts.map

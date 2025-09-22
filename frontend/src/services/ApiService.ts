@@ -152,7 +152,7 @@ export class ApiService {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${this.getToken()}`,
       },
-      body: JSON.stringify({ toUserId }),
+      body: JSON.stringify({ userId: toUserId }),
     });
 
     if (!response.ok) {
@@ -199,6 +199,21 @@ export class ApiService {
 
     if (!response.ok) {
       throw new Error('Failed to search users');
+    }
+
+    return response.json();
+  }
+
+  // Get current user profile (refreshed data)
+  async getCurrentUser(): Promise<User> {
+    const response = await fetch(`${this.baseUrl}/users/profile`, {
+      headers: {
+        'Authorization': `Bearer ${this.getToken()}`,
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to fetch current user profile');
     }
 
     return response.json();

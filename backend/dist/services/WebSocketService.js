@@ -326,7 +326,18 @@ class WebSocketService {
         if (!game)
             return;
         const winner = this.userService.getUserById(winnerId);
-        const endData = { winner: winner?.username || 'Unknown' };
+        const endData = {
+            winner: winner?.username || 'Unknown',
+            winnerId: winnerId,
+            gameId: gameId,
+            showVictoryScreen: true
+        };
+        // Record match result in database for statistics
+        this.userService.recordMatchResult(game.playerIds, winnerId, 'pong');
+        // Set all players as not in game
+        game.playerIds.forEach(playerId => {
+            this.userService.setUserInGame(playerId, false);
+        });
         // 全プレイヤーにゲーム終了を通知
         game.playerIds.forEach(playerId => {
             const playerConnection = this.findConnectionByUserId(playerId);
@@ -334,6 +345,10 @@ class WebSocketService {
                 this.sendToConnection(playerConnection, 'gameEnd', endData);
             }
         });
+        // Clean up the game
+        this.gameService.removeGame(gameId);
+        // Update user list
+        this.broadcastUserUpdate();
     }
     broadcastUserUpdate() {
         const users = this.userService.getOnlineUsers().map(user => ({
@@ -579,13 +594,28 @@ class WebSocketService {
         if (!game)
             return;
         const winner = this.userService.getUserById(winnerId);
-        const endData = { winner: winner?.username || 'Unknown' };
+        const endData = {
+            winner: winner?.username || 'Unknown',
+            winnerId: winnerId,
+            gameId: gameId,
+            showVictoryScreen: true
+        };
+        // Record match result in database for statistics
+        this.userService.recordMatchResult(game.playerIds, winnerId, 'tank');
+        // Set all players as not in game
+        game.playerIds.forEach(playerId => {
+            this.userService.setUserInGame(playerId, false);
+        });
         game.playerIds.forEach(playerId => {
             const playerConnection = this.findConnectionByUserId(playerId);
             if (playerConnection) {
                 this.sendToConnection(playerConnection, 'tankGameEnd', endData);
             }
         });
+        // Clean up the game
+        this.tankGameService.removeGame(gameId);
+        // Update user list
+        this.broadcastUserUpdate();
     }
     // Tournament Handlers
     handleJoinTournament(connectionId, data) {
