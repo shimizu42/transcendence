@@ -1,12 +1,16 @@
-import { FastifyInstance } from 'fastify';
+import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { UserService } from '../services/UserService';
-import { authenticate, AuthenticatedRequest } from '../middleware/auth';
+import { authenticate } from '../middleware/auth';
+import path from 'path';
+import fs from 'fs';
+import crypto from 'crypto';
+
 
 export async function userRoutes(fastify: FastifyInstance) {
   const userService = (fastify as any).userService as UserService;
 
   // Get online users for the game lobby
-  fastify.get('/users', { preHandler: authenticate }, async (request: AuthenticatedRequest, reply) => {
+  fastify.get('/users', { preHandler: authenticate }, async (request: any, reply: FastifyReply) => {
     try {
       const users = userService.getOnlineUsers().map((user: any) => {
         const { password, ...userWithoutPassword } = user;
@@ -19,7 +23,7 @@ export async function userRoutes(fastify: FastifyInstance) {
   });
 
   // Get current user profile
-  fastify.get('/users/profile', { preHandler: authenticate }, async (request: AuthenticatedRequest, reply) => {
+  fastify.get('/users/profile', { preHandler: authenticate }, async (request: any, reply: FastifyReply) => {
     try {
       const userId = request.user!.id;
       const user = userService.getUserById(userId);
@@ -35,18 +39,116 @@ export async function userRoutes(fastify: FastifyInstance) {
     }
   });
 
-  // Simplified profile update (basic info only)
-  fastify.put('/users/profile', { preHandler: authenticate }, async (request: AuthenticatedRequest, reply) => {
+  // Profile update endpoint
+  fastify.put('/users/profile', { preHandler: authenticate }, async (request: any, reply: FastifyReply) => {
     try {
       const userId = request.user!.id;
-      reply.send({ message: 'Profile update not implemented in simplified version' });
+      const { displayName, bio } = request.body as { displayName?: string; bio?: string };
+
+      const updateResult = userService.updateUserProfile(userId, { displayName, bio });
+
+      if (updateResult) {
+        const updatedUser = userService.getUserById(userId);
+        if (updatedUser) {
+          const { password, ...userWithoutPassword } = updatedUser;
+          reply.send(userWithoutPassword);
+        }
+      } else {
+        reply.code(500).send({ error: 'Failed to update profile' });
+      }
     } catch (error) {
       reply.code(500).send({ error: 'Internal server error' });
     }
   });
 
+  // Avatar upload endpoint
+  fastify.post('/users/avatar', { preHandler: authenticate }, async (request: any, reply: FastifyReply) => {
+    try {
+      const userId = request.user!.id;
+      console.log('Avatar upload request from user:', userId);
+
+      const parts = request.parts();
+      let fileData: any = null;
+
+      for await (const part of parts) {
+        if (part.type === 'file') {
+          fileData = part;
+          break;
+        }
+      }
+
+      console.log('File data:', fileData ? 'File received' : 'No file');
+      if (!fileData) {
+        return reply.code(400).send({ error: 'No file uploaded' });
+      }
+
+      // Validate file type
+      const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png'];
+      if (!allowedTypes.includes(fileData.mimetype)) {
+        return reply.code(400).send({ error: 'Invalid file type. Only JPG and PNG files are allowed.' });
+      }
+
+      // Validate file size (5MB limit)
+      const maxSize = 5 * 1024 * 1024; // 5MB
+      const buffer = await fileData.toBuffer();
+      if (buffer.length > maxSize) {
+        return reply.code(400).send({ error: 'File too large. Maximum size is 5MB.' });
+      }
+
+      // Generate unique filename
+      const fileExtension = fileData.mimetype === 'image/jpeg' ? 'jpg' : 'png';
+      const filename = `${userId}-${crypto.randomUUID()}.${fileExtension}`;
+      const uploadPath = path.join(process.cwd(), 'uploads', 'avatars', filename);
+
+      // Ensure uploads directory exists
+      const uploadsDir = path.dirname(uploadPath);
+      if (!fs.existsSync(uploadsDir)) {
+        fs.mkdirSync(uploadsDir, { recursive: true });
+      }
+
+      // Delete old avatar if exists
+      const currentUser = userService.getUserById(userId);
+      if (currentUser?.avatar && !currentUser.avatar.includes('default.svg')) {
+        const oldAvatarPath = path.join(process.cwd(), 'uploads', 'avatars', path.basename(currentUser.avatar));
+        if (fs.existsSync(oldAvatarPath)) {
+          fs.unlinkSync(oldAvatarPath);
+        }
+      }
+
+      // Save file
+      fs.writeFileSync(uploadPath, buffer);
+
+      // Verify user exists before updating avatar
+      const user = userService.getUserById(userId);
+      if (!user) {
+        return reply.code(404).send({ error: 'User not found' });
+      }
+
+      // Update user avatar in database
+      const avatarUrl = `/api/avatars/avatars/${filename}`;
+      console.log('Attempting to update avatar URL:', avatarUrl, 'for user:', userId);
+      const updateResult = userService.updateUserAvatar(userId, avatarUrl);
+      console.log('Update result:', updateResult);
+
+      if (updateResult) {
+        console.log('Avatar uploaded successfully:', avatarUrl);
+        reply.send({ avatarUrl });
+      } else {
+        console.error('Failed to update avatar in database');
+        // Clean up uploaded file if database update failed
+        if (fs.existsSync(uploadPath)) {
+          fs.unlinkSync(uploadPath);
+        }
+        reply.code(500).send({ error: 'Failed to update avatar' });
+      }
+    } catch (error) {
+      console.error('Avatar upload error:', error);
+      reply.code(500).send({ error: `Internal server error: ${(error as Error).message || 'Unknown error'}` });
+    }
+  });
+
   // Get user by ID
-  fastify.get('/users/:id', { preHandler: authenticate }, async (request: AuthenticatedRequest, reply) => {
+  fastify.get('/users/:id', { preHandler: authenticate }, async (request: any, reply: FastifyReply) => {
     try {
       const { id } = request.params as { id: string };
       const user = userService.getUserById(id);
@@ -63,7 +165,7 @@ export async function userRoutes(fastify: FastifyInstance) {
   });
 
   // Basic stats endpoint
-  fastify.get('/users/:id/stats', { preHandler: authenticate }, async (request: AuthenticatedRequest, reply) => {
+  fastify.get('/users/:id/stats', { preHandler: authenticate }, async (request: any, reply: FastifyReply) => {
     try {
       const { id } = request.params as { id: string };
       const user = userService.getUserById(id);
@@ -79,7 +181,7 @@ export async function userRoutes(fastify: FastifyInstance) {
   });
 
   // Placeholder endpoints for frontend compatibility
-  fastify.get('/users/friends', { preHandler: authenticate }, async (request: AuthenticatedRequest, reply) => {
+  fastify.get('/users/friends', { preHandler: authenticate }, async (request: any, reply: FastifyReply) => {
     try {
       const userId = request.user!.id;
       const friends = userService.getFriends(userId);
@@ -90,7 +192,7 @@ export async function userRoutes(fastify: FastifyInstance) {
     }
   });
 
-  fastify.get('/users/friend-requests', { preHandler: authenticate }, async (request: AuthenticatedRequest, reply) => {
+  fastify.get('/users/friend-requests', { preHandler: authenticate }, async (request: any, reply: FastifyReply) => {
     try {
       const userId = request.user!.id;
       const friendRequests = userService.getFriendRequests(userId);
@@ -101,7 +203,7 @@ export async function userRoutes(fastify: FastifyInstance) {
     }
   });
 
-  fastify.post('/users/friend-request', { preHandler: authenticate }, async (request: AuthenticatedRequest, reply) => {
+  fastify.post('/users/friend-request', { preHandler: authenticate }, async (request: any, reply: FastifyReply) => {
     try {
       const { userId } = request.body as { userId?: string };
 
@@ -131,7 +233,7 @@ export async function userRoutes(fastify: FastifyInstance) {
     }
   });
 
-  fastify.post('/users/friend-request/:id/respond', { preHandler: authenticate }, async (request: AuthenticatedRequest, reply) => {
+  fastify.post('/users/friend-request/:id/respond', { preHandler: authenticate }, async (request: any, reply: FastifyReply) => {
     try {
       const { id: requestId } = request.params as { id: string };
       const { response: responseType } = request.body as { response: 'accepted' | 'declined' };
@@ -150,11 +252,11 @@ export async function userRoutes(fastify: FastifyInstance) {
     }
   });
 
-  fastify.delete('/users/friends/:id', { preHandler: authenticate }, async (request: AuthenticatedRequest, reply) => {
+  fastify.delete('/users/friends/:id', { preHandler: authenticate }, async (request: any, reply: FastifyReply) => {
     reply.send({ message: 'Friend system not implemented in simplified version' });
   });
 
-  fastify.get('/users/search', { preHandler: authenticate }, async (request: AuthenticatedRequest, reply) => {
+  fastify.get('/users/search', { preHandler: authenticate }, async (request: any, reply: FastifyReply) => {
     try {
       const { q } = request.query as { q?: string };
 
@@ -184,11 +286,11 @@ export async function userRoutes(fastify: FastifyInstance) {
     }
   });
 
-  fastify.get('/users/:id/matches', { preHandler: authenticate }, async (request: AuthenticatedRequest, reply) => {
+  fastify.get('/users/:id/matches', { preHandler: authenticate }, async (request: any, reply: FastifyReply) => {
     reply.send([]);
   });
 
-  fastify.get('/leaderboard', { preHandler: authenticate }, async (request: AuthenticatedRequest, reply) => {
+  fastify.get('/leaderboard', { preHandler: authenticate }, async (request: any, reply: FastifyReply) => {
     reply.send([]);
   });
 }

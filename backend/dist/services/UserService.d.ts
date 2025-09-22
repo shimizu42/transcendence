@@ -20,6 +20,11 @@ export declare class UserService {
     getFriendRequests(userId: string): FriendRequest[];
     respondToFriendRequest(requestId: string, userId: string, response: 'accepted' | 'declined'): void;
     getFriends(userId: string): User[];
+    updateUserProfile(userId: string, updates: {
+        displayName?: string;
+        bio?: string;
+    }): boolean;
+    updateUserAvatar(userId: string, avatarUrl: string): boolean;
     private hashPassword;
 }
 //# sourceMappingURL=UserService.d.ts.map

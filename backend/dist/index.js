@@ -5,7 +5,8 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const fastify_1 = __importDefault(require("fastify"));
 const websocket_1 = __importDefault(require("@fastify/websocket"));
-// import staticFiles from '@fastify/static';
+const static_1 = __importDefault(require("@fastify/static"));
+const multipart_1 = __importDefault(require("@fastify/multipart"));
 const auth_1 = require("./routes/auth");
 const users_1 = require("./routes/users");
 const game_1 = require("./routes/game");
@@ -14,16 +15,23 @@ const GameService_1 = require("./services/GameService");
 const TankGameService_1 = require("./services/TankGameService");
 const WebSocketService_1 = require("./services/WebSocketService");
 const DatabaseService_1 = require("./database/DatabaseService");
-// import path from 'path';
+const path_1 = __importDefault(require("path"));
 const fastify = (0, fastify_1.default)({
     logger: true
 });
 fastify.register(websocket_1.default);
-// Serve static files for uploads and default avatars (temporarily disabled)
-// fastify.register(staticFiles, {
-//   root: path.join(process.cwd(), 'public'),
-//   prefix: '/public/'
-// });
+fastify.register(multipart_1.default, {
+    attachFieldsToBody: true,
+    limits: {
+        fileSize: 5 * 1024 * 1024 // 5MB
+    }
+});
+// Serve static files for avatar uploads
+fastify.register(static_1.default, {
+    root: path_1.default.join(process.cwd(), 'uploads'),
+    prefix: '/api/avatars/',
+    decorateReply: false
+});
 // Add CORS support globally
 fastify.addHook('onRequest', async (request, reply) => {
     reply.header('Access-Control-Allow-Origin', '*');

@@ -85,7 +85,7 @@ export class ApiService {
   }
 
   // Profile methods
-  async updateProfile(updates: { displayName?: string; bio?: string; email?: string }): Promise<User> {
+  async updateProfile(updates: { displayName?: string; bio?: string; email?: string; avatar?: string | null }): Promise<User> {
     const response = await fetch(`${this.baseUrl}/users/profile`, {
       method: 'PUT',
       headers: {
@@ -97,6 +97,26 @@ export class ApiService {
 
     if (!response.ok) {
       throw new Error('Failed to update profile');
+    }
+
+    return response.json();
+  }
+
+  async uploadAvatar(file: File): Promise<{ avatarUrl: string }> {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const response = await fetch(`${this.baseUrl}/users/avatar`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${this.getToken()}`,
+      },
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Failed to upload avatar: ${errorText}`);
     }
 
     return response.json();

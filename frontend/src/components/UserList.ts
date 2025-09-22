@@ -12,6 +12,7 @@ export class UserList {
   private wsService: WebSocketService;
   private currentUser: User;
   private users: User[] = [];
+  private friends: User[] = [];
   private onGameStart: (gameId: string) => void;
   private onTankGameStart: (gameId: string) => void;
   private onTournamentStart: () => void;
@@ -33,6 +34,8 @@ export class UserList {
     this.setupWebSocketListeners();
     console.log('UserList: Loading users...');
     await this.loadUsers();
+    console.log('UserList: Loading friends...');
+    await this.loadFriends();
     console.log('UserList: Rendering UI...');
     this.render();
     console.log('UserList: Initialization complete');
@@ -41,7 +44,7 @@ export class UserList {
   private setupWebSocketListeners(): void {
     this.wsService.on('userUpdate', (users: User[]) => {
       this.users = users;
-      this.renderUserList();
+      this.renderFriendsList();
     });
 
     this.wsService.on('gameInvitation', (invitation: any) => {
@@ -88,6 +91,15 @@ export class UserList {
       this.users = await this.apiService.getUsers();
     } catch (error) {
       console.error('Failed to load users:', error);
+    }
+  }
+
+  private async loadFriends(): Promise<void> {
+    try {
+      this.friends = await this.apiService.getFriends();
+    } catch (error) {
+      console.error('Failed to load friends:', error);
+      this.friends = [];
     }
   }
 
@@ -152,22 +164,12 @@ export class UserList {
                   </div>
                 </div>
               </div>
-              <div class="bg-gray-600 p-3 rounded text-sm text-gray-300">
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <strong>Pong Controls:</strong> W/S or ↑/↓ for 2P, W/A/S/D or arrows for 4P
-                  </div>
-                  <div>
-                    <strong>Tank Controls:</strong> W/A/S/D to move, Q/E to rotate turret, Space to shoot
-                  </div>
-                </div>
-              </div>
             </div>
             
             <div class="bg-gray-700 rounded-lg p-4">
-              <h2 class="text-xl font-semibold text-white mb-4">Challenge Other Players</h2>
+              <h2 class="text-xl font-semibold text-white mb-4">Friends</h2>
               <div id="user-list" class="space-y-2">
-                <!-- User list will be rendered here -->
+                <!-- Friends list will be rendered here -->
               </div>
             </div>
           </div>
@@ -191,39 +193,59 @@ export class UserList {
       </div>
     `;
 
-    this.renderUserList();
+    this.renderFriendsList();
     this.attachEventListeners();
   }
 
-  private renderUserList(): void {
+  private renderFriendsList(): void {
     const userListContainer = document.getElementById('user-list')!;
-    
-    const otherUsers = this.users.filter(user => user.id !== this.currentUser.id);
-    
-    if (otherUsers.length === 0) {
-      userListContainer.innerHTML = '<p class="text-gray-400">No other players online</p>';
+
+    // Filter friends who are also in the online users list
+    const onlineFriends = this.friends.filter(friend => {
+      const onlineUser = this.users.find(user => user.id === friend.id);
+      return onlineUser && onlineUser.isOnline;
+    }).map(friend => {
+      // Merge friend data with online status, preserving friend's avatar if available
+      const onlineUser = this.users.find(user => user.id === friend.id);
+      return {
+        ...friend,
+        ...onlineUser,
+        avatar: onlineUser?.avatar || friend.avatar || 'http://localhost:3001/api/avatars/avatars/default.svg'
+      };
+    });
+
+    if (onlineFriends.length === 0) {
+      userListContainer.innerHTML = '<p class="text-gray-400">No friends online</p>';
       return;
     }
 
-    userListContainer.innerHTML = otherUsers.map(user => `
+    userListContainer.innerHTML = onlineFriends.map(friend => `
       <div class="flex items-center justify-between bg-gray-600 p-3 rounded">
         <div class="flex items-center space-x-3">
-          <div class="w-3 h-3 rounded-full ${user.isOnline ? 'bg-green-500' : 'bg-gray-500'}"></div>
-          <span class="text-white">${user.username}</span>
-          ${user.isInGame ? '<span class="text-yellow-400 text-sm">(In Game)</span>' : ''}
+          <div class="relative">
+            <img src="${friend.avatar || 'http://localhost:3001/api/avatars/avatars/default.svg'}"
+                 alt="${friend.username}"
+                 class="w-8 h-8 rounded-full object-cover border-2 border-gray-400">
+            <div class="absolute -bottom-1 -right-1 w-3 h-3 rounded-full ${friend.isOnline ? 'bg-green-500' : 'bg-gray-500'} border-2 border-gray-600"></div>
+          </div>
+          <div>
+            <span class="text-white font-medium">${friend.username}</span>
+            ${friend.displayName ? `<div class="text-gray-300 text-sm">${friend.displayName}</div>` : ''}
+            ${friend.isInGame ? '<span class="text-yellow-400 text-sm">(In Game)</span>' : ''}
+          </div>
         </div>
         <div class="flex space-x-2">
           <button
-            class="pong-challenge-btn bg-blue-600 hover:bg-blue-700 text-white px-2 py-1 rounded text-sm ${user.isInGame ? 'opacity-50 cursor-not-allowed' : ''}"
-            ${user.isInGame ? 'disabled' : ''}
-            data-user-id="${user.id}"
+            class="pong-challenge-btn bg-blue-600 hover:bg-blue-700 text-white px-2 py-1 rounded text-sm ${friend.isInGame ? 'opacity-50 cursor-not-allowed' : ''}"
+            ${friend.isInGame ? 'disabled' : ''}
+            data-user-id="${friend.id}"
           >
             🏓 Pong
           </button>
           <button
-            class="tank-challenge-btn bg-green-600 hover:bg-green-700 text-white px-2 py-1 rounded text-sm ${user.isInGame ? 'opacity-50 cursor-not-allowed' : ''}"
-            ${user.isInGame ? 'disabled' : ''}
-            data-user-id="${user.id}"
+            class="tank-challenge-btn bg-green-600 hover:bg-green-700 text-white px-2 py-1 rounded text-sm ${friend.isInGame ? 'opacity-50 cursor-not-allowed' : ''}"
+            ${friend.isInGame ? 'disabled' : ''}
+            data-user-id="${friend.id}"
           >
             🚗 Tank
           </button>

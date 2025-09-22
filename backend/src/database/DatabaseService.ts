@@ -107,6 +107,18 @@ export class DatabaseService {
       return { changes: 0 };
     }
 
+    if (sql.includes('UPDATE users SET avatar')) {
+      const users = this.tables.get('users')!;
+      const avatarUrl = params[0];
+      const userId = params[1];
+      const user = users.find(u => u.id === userId);
+      if (user) {
+        user.avatar = avatarUrl;
+        return { changes: 1 };
+      }
+      return { changes: 0 };
+    }
+
     if (sql.includes('UPDATE user_stats SET')) {
       const stats = this.tables.get('user_stats')!;
       const userId = params[6]; // user_id is the last parameter
@@ -135,6 +147,41 @@ export class DatabaseService {
         stat.win_rate = params[3];
         stat.average_game_duration = params[4];
         stat.best_score = params[5];
+        return { changes: 1 };
+      }
+      return { changes: 0 };
+    }
+
+    if (sql.includes('INSERT INTO friend_requests')) {
+      const friendRequests = this.tables.get('friend_requests')!;
+      const request = {
+        id: params[0],
+        from_user_id: params[1],
+        to_user_id: params[2],
+        status: params[3],
+        created_at: new Date().toISOString()
+      };
+      friendRequests.push(request);
+      return { lastInsertRowid: friendRequests.length, changes: 1 };
+    }
+
+    if (sql.includes('INSERT INTO friendships')) {
+      const friendships = this.tables.get('friendships')!;
+      const friendship = {
+        user_id: params[0],
+        friend_id: params[1],
+        created_at: new Date().toISOString()
+      };
+      friendships.push(friendship);
+      return { lastInsertRowid: friendships.length, changes: 1 };
+    }
+
+    if (sql.includes('UPDATE friend_requests SET status')) {
+      const friendRequests = this.tables.get('friend_requests')!;
+      const requestId = params[1];
+      const request = friendRequests.find(r => r.id === requestId);
+      if (request) {
+        request.status = params[0];
         return { changes: 1 };
       }
       return { changes: 0 };
@@ -170,6 +217,28 @@ export class DatabaseService {
       return gameStats.find(s => s.user_id === params[0] && s.game_type === params[1]) as T;
     }
 
+    if (sql.includes('SELECT * FROM friend_requests WHERE from_user_id = ? AND to_user_id = ?')) {
+      const friendRequests = this.tables.get('friend_requests')!;
+      return friendRequests.find(r => r.from_user_id === params[0] && r.to_user_id === params[1]) as T;
+    }
+
+    if (sql.includes('SELECT * FROM friend_requests WHERE id = ? AND to_user_id = ?')) {
+      const friendRequests = this.tables.get('friend_requests')!;
+      return friendRequests.find(r => r.id === params[0] && r.to_user_id === params[1]) as T;
+    }
+
+    if (sql.includes('SELECT * FROM friendships WHERE')) {
+      const friendships = this.tables.get('friendships')!;
+      // Handle complex friendship queries
+      if (params.length === 4) {
+        // Query: (user_id = ? AND friend_id = ?) OR (user_id = ? AND friend_id = ?)
+        return friendships.find(f =>
+          (f.user_id === params[0] && f.friend_id === params[1]) ||
+          (f.user_id === params[2] && f.friend_id === params[3])
+        ) as T;
+      }
+    }
+
     return undefined;
   }
 
@@ -182,6 +251,16 @@ export class DatabaseService {
     if (sql.includes('SELECT * FROM users')) {
       const users = this.tables.get('users')!;
       return users as T[];
+    }
+
+    if (sql.includes('SELECT * FROM friend_requests WHERE to_user_id = ? AND status = ?')) {
+      const friendRequests = this.tables.get('friend_requests')!;
+      return friendRequests.filter(r => r.to_user_id === params[0] && r.status === params[1]) as T[];
+    }
+
+    if (sql.includes('SELECT friend_id FROM friendships WHERE user_id = ?')) {
+      const friendships = this.tables.get('friendships')!;
+      return friendships.filter(f => f.user_id === params[0]) as T[];
     }
 
     return [];

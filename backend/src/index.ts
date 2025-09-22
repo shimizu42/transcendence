@@ -1,6 +1,7 @@
 import Fastify from 'fastify';
 import websocket from '@fastify/websocket';
-// import staticFiles from '@fastify/static';
+import staticFiles from '@fastify/static';
+import multipart from '@fastify/multipart';
 import { authRoutes } from './routes/auth';
 import { userRoutes } from './routes/users';
 import { gameRoutes } from './routes/game';
@@ -9,19 +10,25 @@ import { GameService } from './services/GameService';
 import { TankGameService } from './services/TankGameService';
 import { WebSocketService } from './services/WebSocketService';
 import { DatabaseService } from './database/DatabaseService';
-// import path from 'path';
+import path from 'path';
 
 const fastify = Fastify({
   logger: true
 });
 
 fastify.register(websocket);
+fastify.register(multipart, {
+  limits: {
+    fileSize: 5 * 1024 * 1024 // 5MB
+  }
+});
 
-// Serve static files for uploads and default avatars (temporarily disabled)
-// fastify.register(staticFiles, {
-//   root: path.join(process.cwd(), 'public'),
-//   prefix: '/public/'
-// });
+// Serve static files for avatar uploads
+fastify.register(staticFiles, {
+  root: path.join(process.cwd(), 'uploads'),
+  prefix: '/api/avatars/',
+  decorateReply: false
+});
 
 // Add CORS support globally
 fastify.addHook('onRequest', async (request, reply) => {

@@ -86,12 +86,14 @@ export class UserService {
       [id]
     );
 
+    console.log('getUserById query result:', dbUser, 'for id:', id);
     if (!dbUser) return undefined;
     return this.convertDbUserToUser(dbUser);
   }
 
   getAllUsers(): User[] {
     const dbUsers = this.db.all<DatabaseUser>('SELECT * FROM users');
+    console.log('getAllUsers query result:', dbUsers.length, 'users found');
     return dbUsers.map(dbUser => this.convertDbUserToUser(dbUser));
   }
 
@@ -170,6 +172,9 @@ export class UserService {
       current_win_streak: 0
     };
 
+    // Set default avatar if none exists
+    const avatar = dbUser.avatar || '/api/avatars/default.svg';
+
     const pongStatsRow = this.db.get<any>(
       'SELECT * FROM game_type_stats WHERE user_id = ? AND game_type = ?',
       [dbUser.id, 'pong']
@@ -203,7 +208,7 @@ export class UserService {
       email: dbUser.email,
       displayName: dbUser.display_name,
       bio: dbUser.bio,
-      avatar: dbUser.avatar,
+      avatar: avatar,
       isOnline: dbUser.is_online === 1,
       isInGame: dbUser.is_in_game === 1,
       friends: [], // Simplified for now
@@ -327,10 +332,12 @@ export class UserService {
 
     const requestId = crypto.randomUUID();
 
-    this.db.run(
+    console.log('Creating friend request:', { requestId, fromUserId, toUserId });
+    const result = this.db.run(
       'INSERT INTO friend_requests (id, from_user_id, to_user_id, status) VALUES (?, ?, ?, ?)',
       [requestId, fromUserId, toUserId, 'pending']
     );
+    console.log('Friend request insert result:', result.changes, 'rows affected');
 
     const fromUser = this.getUserById(fromUserId)!;
     const toUser = this.getUserById(toUserId)!;
@@ -356,6 +363,7 @@ export class UserService {
       [userId, 'pending']
     );
 
+    console.log('getFriendRequests query result:', requests.length, 'requests found for user:', userId);
     return requests.map(request => {
       const fromUser = this.getUserById(request.from_user_id)!;
 
@@ -418,6 +426,55 @@ export class UserService {
     );
 
     return friendships.map(friendship => this.getUserById(friendship.friend_id)!);
+  }
+
+  // Update user profile
+  updateUserProfile(userId: string, updates: { displayName?: string; bio?: string }): boolean {
+    try {
+      const user = this.getUserById(userId);
+      if (!user) return false;
+
+      const setClause = [];
+      const values = [];
+
+      if (updates.displayName !== undefined) {
+        setClause.push('display_name = ?');
+        values.push(updates.displayName);
+      }
+      if (updates.bio !== undefined) {
+        setClause.push('bio = ?');
+        values.push(updates.bio);
+      }
+
+      if (setClause.length === 0) return true; // No updates needed
+
+      values.push(userId);
+      const result = this.db.run(
+        `UPDATE users SET ${setClause.join(', ')} WHERE id = ?`,
+        values
+      );
+
+      return result.changes > 0;
+    } catch (error) {
+      console.error('Update user profile error:', error);
+      return false;
+    }
+  }
+
+  // Update user avatar
+  updateUserAvatar(userId: string, avatarUrl: string): boolean {
+    try {
+      console.log('UserService: Updating avatar for user:', userId, 'to:', avatarUrl);
+      const result = this.db.run(
+        'UPDATE users SET avatar = ? WHERE id = ?',
+        [avatarUrl, userId]
+      );
+      console.log('UserService: Update result changes:', result.changes);
+      return result.changes > 0;
+    } catch (error) {
+      console.error('Update user avatar error:', error);
+      return false;
+    }
   }
 
   // Hash password for compatibility with old codebase
