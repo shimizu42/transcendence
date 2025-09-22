@@ -17,7 +17,7 @@ export async function authRoutes(fastify: FastifyInstance) {
         return reply.code(400).send({ error: 'Username must be at least 3 characters and password at least 6 characters' });
       }
 
-      const user = userService.createUser(username, password);
+      const user = await userService.createUser(username, password);
       const { password: _, ...userWithoutPassword } = user;
 
       reply.send(userWithoutPassword);
@@ -37,8 +37,8 @@ export async function authRoutes(fastify: FastifyInstance) {
         return reply.code(400).send({ error: 'Username and password are required' });
       }
 
-      const user = userService.authenticateUser(username, password);
-      if (!user) {
+      const user = await userService.getUserByUsername(username);
+      if (!user || !(await userService.validatePassword(username, password))) {
         return reply.code(401).send({ error: 'Invalid credentials' });
       }
 

@@ -21,6 +21,12 @@ export interface FriendRequest {
     toUserId: string;
     status: 'pending' | 'accepted' | 'declined';
     createdAt: Date;
+    fromUser?: {
+        id: string;
+        username: string;
+        displayName?: string;
+        avatar?: string;
+    };
 }
 export interface UserStats {
     totalGames: number;

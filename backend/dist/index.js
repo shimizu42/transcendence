@@ -13,6 +13,7 @@ const UserService_1 = require("./services/UserService");
 const GameService_1 = require("./services/GameService");
 const TankGameService_1 = require("./services/TankGameService");
 const WebSocketService_1 = require("./services/WebSocketService");
+const DatabaseService_1 = require("./database/DatabaseService");
 // import path from 'path';
 const fastify = (0, fastify_1.default)({
     logger: true
@@ -36,11 +37,19 @@ fastify.addHook('preHandler', async (request, reply) => {
         return reply;
     }
 });
-const userService = new UserService_1.UserService();
-const gameService = new GameService_1.GameService(userService);
-const tankGameService = new TankGameService_1.TankGameService(userService);
-const webSocketService = new WebSocketService_1.WebSocketService(userService, gameService, tankGameService);
+// Initialize database first
+const initializeServer = async () => {
+    const db = DatabaseService_1.DatabaseService.getInstance();
+    await db.initialize();
+    const userService = new UserService_1.UserService();
+    const gameService = new GameService_1.GameService(userService);
+    const tankGameService = new TankGameService_1.TankGameService(userService);
+    const webSocketService = new WebSocketService_1.WebSocketService(userService, gameService, tankGameService);
+    return { userService, gameService, tankGameService, webSocketService };
+};
+const servicesPromise = initializeServer();
 fastify.register(async function (fastify) {
+    const { userService, gameService } = await servicesPromise;
     // Pass userService and gameService to routes
     fastify.decorate('userService', userService);
     fastify.decorate('gameService', gameService);
@@ -49,11 +58,12 @@ fastify.register(async function (fastify) {
     await fastify.register(game_1.gameRoutes);
 });
 fastify.register(async function (fastify) {
+    const { webSocketService } = await servicesPromise;
     fastify.get('/ws', { websocket: true }, (connection, request) => {
         webSocketService.handleConnection(connection, request);
     });
 });
-fastify.get('/health', async (request, reply) => {
+fastify.get('/health', async () => {
     return { status: 'OK', timestamp: new Date().toISOString() };
 });
 const start = async () => {

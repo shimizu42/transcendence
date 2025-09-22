@@ -15,10 +15,10 @@ class WebSocketService {
     handleConnection(connection, request) {
         const connectionId = this.generateConnectionId();
         this.connections.set(connectionId, { socket: connection });
-        connection.on('message', (message) => {
+        connection.on('message', async (message) => {
             try {
                 const data = JSON.parse(message.toString());
-                this.handleMessage(connectionId, data);
+                await this.handleMessage(connectionId, data);
             }
             catch (error) {
                 console.error('Failed to parse WebSocket message:', error);
@@ -32,7 +32,7 @@ class WebSocketService {
             this.handleDisconnection(connectionId);
         });
     }
-    handleMessage(connectionId, message) {
+    async handleMessage(connectionId, message) {
         console.log('WebSocket: Received message', { connectionId, type: message.type, data: message.data });
         const connection = this.connections.get(connectionId);
         if (!connection) {
@@ -41,13 +41,13 @@ class WebSocketService {
         }
         switch (message.type) {
             case 'authenticate':
-                this.handleAuthentication(connectionId, message.data);
+                await this.handleAuthentication(connectionId, message.data);
                 break;
             case 'gameInvite':
-                this.handleGameInvite(connectionId, message.data);
+                await this.handleGameInvite(connectionId, message.data);
                 break;
             case 'gameInviteResponse':
-                this.handleGameInviteResponse(connectionId, message.data);
+                await this.handleGameInviteResponse(connectionId, message.data);
                 break;
             case 'joinQueue4Player':
                 this.handleJoinQueue4Player(connectionId, message.data);
@@ -98,7 +98,7 @@ class WebSocketService {
                 break;
         }
     }
-    handleAuthentication(connectionId, data) {
+    async handleAuthentication(connectionId, data) {
         console.log('WebSocket: Handling authentication for connection', connectionId);
         const user = (0, auth_1.verifyToken)(data.token);
         if (!user) {
@@ -110,8 +110,8 @@ class WebSocketService {
         const connection = this.connections.get(connectionId);
         if (connection) {
             connection.userId = user.id;
-            this.userService.setUserOnline(user.id, connectionId);
-            this.broadcastUserUpdate();
+            await this.userService.setUserOnline(user.id, true);
+            await this.broadcastUserUpdate();
             this.sendToConnection(connectionId, 'authenticated', { user });
             console.log('WebSocket: Authentication successful for', user.username);
         }
