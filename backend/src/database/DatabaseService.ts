@@ -187,6 +187,29 @@ export class DatabaseService {
       return { changes: 0 };
     }
 
+    if (sql.includes('INSERT INTO match_history')) {
+      const matchHistory = this.tables.get('match_history')!;
+      const match = {
+        id: params[0],
+        game_id: params[1],
+        game_type: params[2],
+        game_mode: params[3],
+        player_id: params[4],
+        opponent_ids: params[5],
+        opponent_names: params[6],
+        result: params[7],
+        score: params[8],
+        opponent_scores: params[9],
+        duration: params[10],
+        date_played: params[11],
+        is_ranked: params[12],
+        tournament_id: params[13]
+      };
+      matchHistory.push(match);
+      console.log('Match history record inserted:', match);
+      return { lastInsertRowid: matchHistory.length, changes: 1 };
+    }
+
     return { lastInsertRowid: 0, changes: 0 };
   }
 
@@ -263,6 +286,17 @@ export class DatabaseService {
       return friendships.filter(f => f.user_id === params[0]) as T[];
     }
 
+    if (sql.includes('SELECT * FROM match_history WHERE player_id = ?')) {
+      const matchHistory = this.tables.get('match_history')!;
+      const matches = matchHistory.filter(m => m.player_id === params[0]);
+      // Sort by date_played DESC and apply LIMIT/OFFSET
+      const sorted = matches.sort((a, b) => new Date(b.date_played).getTime() - new Date(a.date_played).getTime());
+      const limit = params[1] || sorted.length;
+      const offset = params[2] || 0;
+      console.log(`Found ${matches.length} matches for player ${params[0]}, returning ${limit} with offset ${offset}`);
+      return sorted.slice(offset, offset + limit) as T[];
+    }
+
     return [];
   }
 
@@ -303,5 +337,17 @@ export class DatabaseService {
 
   public delete(table: string, where: string, params: any[] = []): number {
     return 0; // Simplified
+  }
+
+  // Debug method to inspect table contents
+  public debugTable(tableName: string): any[] {
+    const table = this.tables.get(tableName);
+    if (table) {
+      console.log(`Table '${tableName}' contains ${table.length} records:`, table);
+      return table;
+    } else {
+      console.log(`Table '${tableName}' not found`);
+      return [];
+    }
   }
 }

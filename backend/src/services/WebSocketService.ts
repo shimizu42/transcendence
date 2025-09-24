@@ -375,7 +375,7 @@ export class WebSocketService {
     };
 
     // Record match result in database for statistics
-    this.userService.recordMatchResult(game.playerIds, winnerId, 'pong');
+    this.userService.recordMatchResult(game.playerIds, winnerId, 'pong', undefined, game.gameType);
 
     // Set all players as not in game
     game.playerIds.forEach(playerId => {
@@ -675,7 +675,7 @@ export class WebSocketService {
     };
 
     // Record match result in database for statistics
-    this.userService.recordMatchResult(game.playerIds, winnerId, 'tank');
+    this.userService.recordMatchResult(game.playerIds, winnerId, 'tank', undefined, game.gameType);
 
     // Set all players as not in game
     game.playerIds.forEach(playerId => {
@@ -822,6 +822,19 @@ export class WebSocketService {
         if (game && game.status === 'finished') {
           // 試合完了処理
           this.tournamentService.finishMatch(tournamentId, matchId, game.winner!);
+
+          // Record tournament match result in database
+          const tournamentForRecording = this.tournamentService.getTournament(tournamentId);
+          if (tournamentForRecording) {
+            this.userService.recordMatchResult(
+              game.playerIds,
+              game.winner!,
+              tournamentForRecording.gameType,
+              undefined,
+              'tournament',
+              tournamentId
+            );
+          }
 
           // プレイヤーをゲーム外に設定
           game.playerIds.forEach((playerId: string) => {

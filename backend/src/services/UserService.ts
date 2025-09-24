@@ -300,12 +300,100 @@ export class UserService {
   }
 
   // Record a match result for all players
-  recordMatchResult(playerIds: string[], winnerId: string, gameType: 'pong' | 'tank', gameDuration?: number): void {
+  recordMatchResult(playerIds: string[], winnerId: string, gameType: 'pong' | 'tank', gameDuration?: number, gameMode?: string, tournamentId?: string): void {
+    console.log('RecordMatchResult called:', { playerIds, winnerId, gameType, gameMode, tournamentId });
+    const matchDate = new Date().toISOString();
+    const duration = gameDuration || 0;
+
+    // Insert match history for each player
     playerIds.forEach(playerId => {
       const won = playerId === winnerId;
-      // Get player's score from the game if available
+
+      // Get opponent information
+      const opponentIds = playerIds.filter(id => id !== playerId);
+      const opponents = opponentIds.map(id => this.getUserById(id)).filter(user => user !== undefined);
+      const opponentNames = opponents.map(user => user!.username);
+      const opponentScores = new Array(opponents.length).fill(0); // Placeholder scores
+
+      // Insert match history record
+      try {
+        console.log(`Attempting to insert match history for player ${playerId}`, {
+          gameType,
+          gameMode: gameMode || '2player',
+          won: won ? 'win' : 'loss',
+          opponentNames,
+          opponentIds
+        });
+
+        const insertResult = this.db.run(
+          `INSERT INTO match_history (
+            id, game_id, game_type, game_mode, player_id, opponent_ids, opponent_names,
+            result, score, opponent_scores, duration, date_played, is_ranked, tournament_id
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            crypto.randomUUID(),
+            crypto.randomUUID(), // game_id
+            gameType,
+            gameMode || '2player',
+            playerId, // player_id instead of user_id
+            JSON.stringify(opponentIds), // opponent_ids
+            JSON.stringify(opponentNames),
+            won ? 'win' : 'loss',
+            won ? 1 : 0, // Placeholder score
+            JSON.stringify(opponentScores),
+            duration,
+            matchDate,
+            0, // Not ranked by default
+            tournamentId || null
+          ]
+        );
+        console.log(`Match history insert result for player ${playerId}:`, {
+          changes: insertResult.changes,
+          lastInsertRowid: insertResult.lastInsertRowid,
+          success: insertResult.changes > 0
+        });
+      } catch (error) {
+        console.error(`Error inserting match history for player ${playerId}:`, error);
+      }
+
+      // Update player stats
       this.updateUserStats(playerId, gameType, won, gameDuration);
     });
+  }
+
+  // Get match history for a user
+  getMatchHistory(userId: string, limit: number = 20, offset: number = 0): MatchHistory[] {
+    console.log(`Getting match history for user ${userId}, limit: ${limit}, offset: ${offset}`);
+
+    // Debug: Check table contents
+    this.db.debugTable('match_history');
+
+    const matches = this.db.all<any>(
+      `SELECT * FROM match_history
+       WHERE player_id = ?
+       ORDER BY date_played DESC
+       LIMIT ? OFFSET ?`,
+      [userId, limit, offset]
+    );
+
+    console.log(`Found ${matches.length} matches for user ${userId}`);
+
+    return matches.map(match => ({
+      id: match.id,
+      gameId: match.game_id,
+      gameType: match.game_type,
+      gameMode: match.game_mode,
+      playerId: match.player_id,
+      opponentIds: JSON.parse(match.opponent_ids || '[]'),
+      opponentNames: JSON.parse(match.opponent_names || '[]'),
+      result: match.result,
+      score: match.score,
+      opponentScores: JSON.parse(match.opponent_scores || '[]'),
+      duration: match.duration,
+      datePlayed: new Date(match.date_played),
+      isRanked: match.is_ranked === 1,
+      tournamentId: match.tournament_id
+    }));
   }
 
   // Friend request methods
@@ -340,7 +428,6 @@ export class UserService {
     console.log('Friend request insert result:', result.changes, 'rows affected');
 
     const fromUser = this.getUserById(fromUserId)!;
-    const toUser = this.getUserById(toUserId)!;
 
     return {
       id: requestId,
@@ -477,9 +564,4 @@ export class UserService {
     }
   }
 
-  // Hash password for compatibility with old codebase
-  private hashPassword(password: string): string {
-    // Simple hash for backwards compatibility - in production use bcrypt
-    return crypto.createHash('sha256').digest('hex');
-  }
 }

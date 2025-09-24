@@ -87,9 +87,9 @@ export class GameService {
       ballX: 0,
       ballY: 0.25,
       ballZ: 0,
-      ballVelocityX: Math.random() > 0.5 ? 0.1 : -0.1,
+      ballVelocityX: Math.random() > 0.5 ? 0.2 : -0.2,
       ballVelocityY: 0,
-      ballVelocityZ: (Math.random() - 0.5) * 0.1,
+      ballVelocityZ: (Math.random() - 0.5) * 0.2,
       status: 'waiting',
       alivePlayers: [...playerIds],
       createdAt: new Date()
@@ -237,9 +237,9 @@ export class GameService {
     game.ballX = 0;
     game.ballY = 0.25;
     game.ballZ = 0;
-    game.ballVelocityX = Math.random() > 0.5 ? 0.1 : -0.1;
+    game.ballVelocityX = Math.random() > 0.5 ? 0.2 : -0.2;
     game.ballVelocityY = 0;
-    game.ballVelocityZ = (Math.random() - 0.5) * 0.1;
+    game.ballVelocityZ = (Math.random() - 0.5) * 0.2;
   }
 
   // 4人対戦用の衝突検知（生きているプレイヤーのパドルと死んでいるプレイヤーの仕切り）

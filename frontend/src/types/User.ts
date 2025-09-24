@@ -10,8 +10,8 @@ export interface User {
   friends: string[];
   friendRequests: FriendRequest[];
   stats: UserStats;
-  createdAt: string;
-  lastLoginAt?: string;
+  createdAt: Date | string;
+  lastLoginAt?: Date | string;
 }
 
 export interface FriendRequest {
@@ -61,7 +61,7 @@ export interface MatchHistory {
   score: number;
   opponentScores: number[];
   duration: number;
-  datePlayed: string;
+  datePlayed: Date | string;
   isRanked: boolean;
   tournamentId?: string;
 }

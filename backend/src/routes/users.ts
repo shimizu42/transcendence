@@ -287,7 +287,21 @@ export async function userRoutes(fastify: FastifyInstance) {
   });
 
   fastify.get('/users/:id/matches', { preHandler: authenticate }, async (request: any, reply: FastifyReply) => {
-    reply.send([]);
+    try {
+      const { id } = request.params as { id: string };
+      const { limit = 20, offset = 0 } = request.query as { limit?: number; offset?: number };
+
+      const user = userService.getUserById(id);
+      if (!user) {
+        return reply.code(404).send({ error: 'User not found' });
+      }
+
+      const matches = userService.getMatchHistory(id, Number(limit), Number(offset));
+      reply.send(matches);
+    } catch (error) {
+      console.error('Get match history error:', error);
+      reply.code(500).send({ error: 'Internal server error' });
+    }
   });
 
   fastify.get('/leaderboard', { preHandler: authenticate }, async (request: any, reply: FastifyReply) => {

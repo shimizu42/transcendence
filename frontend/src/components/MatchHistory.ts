@@ -409,8 +409,8 @@ export class MatchHistory {
     }
   }
 
-  private formatDate(dateString: string): string {
-    const date = new Date(dateString);
+  private formatDate(dateInput: string | Date): string {
+    const date = dateInput instanceof Date ? dateInput : new Date(dateInput);
     return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   }
 
