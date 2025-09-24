@@ -63,7 +63,13 @@ export class WebSocketService {
     this.messageHandlers.get(type)!.push(handler);
   }
 
-  off(type: string, handler: Function): void {
+  off(type: string, handler?: Function): void {
+    if (!handler) {
+      // Remove all handlers for this type
+      this.messageHandlers.delete(type);
+      return;
+    }
+
     const handlers = this.messageHandlers.get(type);
     if (handlers) {
       const index = handlers.indexOf(handler);

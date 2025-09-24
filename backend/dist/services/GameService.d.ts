@@ -1,13 +1,17 @@
 import { Game, GameInvitation } from '../models/User';
+import { UserService } from './UserService';
 export declare class GameService {
     private games;
     private invitations;
     private gameIntervals;
     private waitingRoom4Player;
+    private userService;
+    constructor(userService: UserService);
     createInvitation(fromUserId: string, toUserId: string): GameInvitation;
     getInvitation(id: string): GameInvitation | undefined;
     acceptInvitation(id: string): Game | null;
     declineInvitation(id: string): boolean;
+    createPrivateGame(playerIds: string[], gameType?: '2player' | '4player'): Game;
     createGame(playerIds: string[], gameType?: '2player' | '4player'): Game;
     getGame(id: string): Game | undefined;
     startGame(gameId: string): boolean;

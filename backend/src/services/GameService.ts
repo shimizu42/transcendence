@@ -1,4 +1,5 @@
 import { Game, GameInvitation, GamePlayer } from '../models/User';
+import { UserService } from './UserService';
 import crypto from 'crypto';
 
 export class GameService {
@@ -6,6 +7,11 @@ export class GameService {
   private invitations: Map<string, GameInvitation> = new Map();
   private gameIntervals: Map<string, NodeJS.Timeout> = new Map();
   private waitingRoom4Player: string[] = []; // 4人対戦待機中のプレイヤーID
+  private userService: UserService;
+
+  constructor(userService: UserService) {
+    this.userService = userService;
+  }
 
   createInvitation(fromUserId: string, toUserId: string): GameInvitation {
     const invitation: GameInvitation = {
@@ -45,6 +51,10 @@ export class GameService {
     invitation.status = 'declined';
     this.invitations.delete(id);
     return true;
+  }
+
+  createPrivateGame(playerIds: string[], gameType: '2player' | '4player' = '2player'): Game {
+    return this.createGame(playerIds, gameType);
   }
 
   createGame(playerIds: string[], gameType: '2player' | '4player' = '2player'): Game {

@@ -1,17 +1,26 @@
 import Fastify from 'fastify';
 import websocket from '@fastify/websocket';
+// import staticFiles from '@fastify/static';
 import { authRoutes } from './routes/auth';
 import { userRoutes } from './routes/users';
 import { gameRoutes } from './routes/game';
 import { UserService } from './services/UserService';
 import { GameService } from './services/GameService';
+import { TankGameService } from './services/TankGameService';
 import { WebSocketService } from './services/WebSocketService';
+// import path from 'path';
 
 const fastify = Fastify({
   logger: true
 });
 
 fastify.register(websocket);
+
+// Serve static files for uploads and default avatars (temporarily disabled)
+// fastify.register(staticFiles, {
+//   root: path.join(process.cwd(), 'public'),
+//   prefix: '/public/'
+// });
 
 // Add CORS support globally
 fastify.addHook('onRequest', async (request, reply) => {
@@ -29,8 +38,9 @@ fastify.addHook('preHandler', async (request, reply) => {
 });
 
 const userService = new UserService();
-const gameService = new GameService();
-const webSocketService = new WebSocketService(userService, gameService);
+const gameService = new GameService(userService);
+const tankGameService = new TankGameService(userService);
+const webSocketService = new WebSocketService(userService, gameService, tankGameService);
 
 fastify.register(async function (fastify) {
   // Pass userService and gameService to routes
