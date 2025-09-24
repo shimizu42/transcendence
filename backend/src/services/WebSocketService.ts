@@ -29,10 +29,10 @@ export class WebSocketService {
     const connectionId = this.generateConnectionId();
     this.connections.set(connectionId, { socket: connection });
 
-    connection.on('message', (message: Buffer) => {
+    connection.on('message', async (message: Buffer) => {
       try {
         const data = JSON.parse(message.toString());
-        this.handleMessage(connectionId, data);
+        await this.handleMessage(connectionId, data);
       } catch (error) {
         console.error('Failed to parse WebSocket message:', error);
       }
@@ -48,7 +48,7 @@ export class WebSocketService {
     });
   }
 
-  private handleMessage(connectionId: string, message: { type: string; data: any }): void {
+  private async handleMessage(connectionId: string, message: { type: string; data: any }): Promise<void> {
     console.log('WebSocket: Received message', { connectionId, type: message.type, data: message.data });
     const connection = this.connections.get(connectionId);
     if (!connection) {
@@ -58,13 +58,13 @@ export class WebSocketService {
 
     switch (message.type) {
       case 'authenticate':
-        this.handleAuthentication(connectionId, message.data);
+        await this.handleAuthentication(connectionId, message.data);
         break;
       case 'gameInvite':
-        this.handleGameInvite(connectionId, message.data);
+        await this.handleGameInvite(connectionId, message.data);
         break;
       case 'gameInviteResponse':
-        this.handleGameInviteResponse(connectionId, message.data);
+        await this.handleGameInviteResponse(connectionId, message.data);
         break;
       case 'joinQueue4Player':
         this.handleJoinQueue4Player(connectionId, message.data);
@@ -116,7 +116,7 @@ export class WebSocketService {
     }
   }
 
-  private handleAuthentication(connectionId: string, data: { token: string }): void {
+  private async handleAuthentication(connectionId: string, data: { token: string }): Promise<void> {
     console.log('WebSocket: Handling authentication for connection', connectionId);
     const user = verifyToken(data.token);
     if (!user) {
@@ -129,8 +129,8 @@ export class WebSocketService {
     const connection = this.connections.get(connectionId);
     if (connection) {
       connection.userId = user.id;
-      this.userService.setUserOnline(user.id, connectionId);
-      this.broadcastUserUpdate();
+      await this.userService.setUserOnline(user.id, true);
+      await this.broadcastUserUpdate();
       this.sendToConnection(connectionId, 'authenticated', { user });
       console.log('WebSocket: Authentication successful for', user.username);
     }
@@ -367,7 +367,20 @@ export class WebSocketService {
     if (!game) return;
 
     const winner = this.userService.getUserById(winnerId);
-    const endData = { winner: winner?.username || 'Unknown' };
+    const endData = {
+      winner: winner?.username || 'Unknown',
+      winnerId: winnerId,
+      gameId: gameId,
+      showVictoryScreen: true
+    };
+
+    // Record match result in database for statistics
+    this.userService.recordMatchResult(game.playerIds, winnerId, 'pong');
+
+    // Set all players as not in game
+    game.playerIds.forEach(playerId => {
+      this.userService.setUserInGame(playerId, false);
+    });
 
     // 全プレイヤーにゲーム終了を通知
     game.playerIds.forEach(playerId => {
@@ -376,6 +389,12 @@ export class WebSocketService {
         this.sendToConnection(playerConnection, 'gameEnd', endData);
       }
     });
+
+    // Clean up the game
+    this.gameService.removeGame(gameId);
+
+    // Update user list
+    this.broadcastUserUpdate();
   }
 
   private broadcastUserUpdate(): void {
@@ -648,7 +667,20 @@ export class WebSocketService {
     if (!game) return;
 
     const winner = this.userService.getUserById(winnerId);
-    const endData = { winner: winner?.username || 'Unknown' };
+    const endData = {
+      winner: winner?.username || 'Unknown',
+      winnerId: winnerId,
+      gameId: gameId,
+      showVictoryScreen: true
+    };
+
+    // Record match result in database for statistics
+    this.userService.recordMatchResult(game.playerIds, winnerId, 'tank');
+
+    // Set all players as not in game
+    game.playerIds.forEach(playerId => {
+      this.userService.setUserInGame(playerId, false);
+    });
 
     game.playerIds.forEach(playerId => {
       const playerConnection = this.findConnectionByUserId(playerId);
@@ -656,6 +688,12 @@ export class WebSocketService {
         this.sendToConnection(playerConnection, 'tankGameEnd', endData);
       }
     });
+
+    // Clean up the game
+    this.tankGameService.removeGame(gameId);
+
+    // Update user list
+    this.broadcastUserUpdate();
   }
 
   // Tournament Handlers

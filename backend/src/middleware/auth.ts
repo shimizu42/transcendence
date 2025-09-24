@@ -1,4 +1,5 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
+import { MultipartFile } from '@fastify/multipart';
 import jwt from 'jsonwebtoken';
 
 const JWT_SECRET = 'your-secret-key';

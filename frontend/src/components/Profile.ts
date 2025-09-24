@@ -26,12 +26,26 @@ export class Profile {
               </button>
             </div>
 
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <!-- Profile Information -->
-              <div class="bg-gray-700 rounded-lg p-6">
-                <h2 class="text-xl font-semibold text-white mb-4">Profile Information</h2>
+            <!-- Profile Information -->
+            <div class="bg-gray-700 rounded-lg p-6">
+              <h2 class="text-xl font-semibold text-white mb-4">Profile Information</h2>
 
                 <div class="space-y-4">
+                  <!-- Avatar Upload Section -->
+                  <div class="flex flex-col items-center mb-6">
+                    <div class="relative mb-4">
+                      <img id="avatar-preview" src="${this.currentUser.avatar || 'http://localhost:3001/api/avatars/avatars/default.svg'}"
+                           alt="Avatar" class="w-24 h-24 rounded-full object-cover border-4 border-gray-500">
+                      <button id="avatar-change-btn" class="absolute bottom-0 right-0 bg-blue-600 hover:bg-blue-700 text-white rounded-full p-2">
+                        <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                          <path d="M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168l10-10zM11.207 2.5 13.5 4.793 14.793 3.5 12.5 1.207 11.207 2.5zm1.586 3L10.5 3.207 4 9.707V10h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.293l6.5-6.5z"/>
+                        </svg>
+                      </button>
+                    </div>
+                    <input type="file" id="avatar-input" accept="image/jpeg,image/jpg,image/png" style="display: none;">
+                    <button id="remove-avatar-btn" class="text-sm text-gray-400 hover:text-white">Remove Avatar</button>
+                  </div>
+
                   <div>
                     <label class="block text-sm font-medium text-gray-300 mb-1">Username</label>
                     <input type="text" id="username" value="${this.currentUser.username}"
@@ -68,84 +82,6 @@ export class Profile {
                   </div>
                 </div>
               </div>
-
-              <!-- Profile Stats -->
-              <div class="bg-gray-700 rounded-lg p-6">
-                <h2 class="text-xl font-semibold text-white mb-4">Statistics Overview</h2>
-
-                <div class="grid grid-cols-2 gap-4 mb-6">
-                  <div class="bg-gray-600 p-4 rounded text-center">
-                    <div class="text-2xl font-bold text-blue-400">${this.currentUser.stats?.totalGames || 0}</div>
-                    <div class="text-sm text-gray-300">Total Games</div>
-                  </div>
-                  <div class="bg-gray-600 p-4 rounded text-center">
-                    <div class="text-2xl font-bold text-green-400">${this.currentUser.stats?.wins || 0}</div>
-                    <div class="text-sm text-gray-300">Wins</div>
-                  </div>
-                  <div class="bg-gray-600 p-4 rounded text-center">
-                    <div class="text-2xl font-bold text-red-400">${this.currentUser.stats?.losses || 0}</div>
-                    <div class="text-sm text-gray-300">Losses</div>
-                  </div>
-                  <div class="bg-gray-600 p-4 rounded text-center">
-                    <div class="text-2xl font-bold text-yellow-400">${this.currentUser.stats?.winRate ? (this.currentUser.stats.winRate * 100).toFixed(1) : 0}%</div>
-                    <div class="text-sm text-gray-300">Win Rate</div>
-                  </div>
-                </div>
-
-                <!-- Game Type Stats -->
-                <div class="grid grid-cols-1 gap-4">
-                  <div class="bg-gray-600 p-4 rounded">
-                    <h3 class="text-lg font-semibold text-white mb-2">🏓 Pong Stats</h3>
-                    <div class="grid grid-cols-3 gap-2 text-sm">
-                      <div class="text-center">
-                        <div class="font-bold text-blue-400">${this.currentUser.stats?.pongStats?.gamesPlayed || 0}</div>
-                        <div class="text-gray-300">Games</div>
-                      </div>
-                      <div class="text-center">
-                        <div class="font-bold text-green-400">${this.currentUser.stats?.pongStats?.wins || 0}</div>
-                        <div class="text-gray-300">Wins</div>
-                      </div>
-                      <div class="text-center">
-                        <div class="font-bold text-yellow-400">${this.currentUser.stats?.pongStats?.bestScore || 0}</div>
-                        <div class="text-gray-300">Best Score</div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div class="bg-gray-600 p-4 rounded">
-                    <h3 class="text-lg font-semibold text-white mb-2">🚗 Tank Stats</h3>
-                    <div class="grid grid-cols-3 gap-2 text-sm">
-                      <div class="text-center">
-                        <div class="font-bold text-blue-400">${this.currentUser.stats?.tankStats?.gamesPlayed || 0}</div>
-                        <div class="text-gray-300">Games</div>
-                      </div>
-                      <div class="text-center">
-                        <div class="font-bold text-green-400">${this.currentUser.stats?.tankStats?.wins || 0}</div>
-                        <div class="text-gray-300">Wins</div>
-                      </div>
-                      <div class="text-center">
-                        <div class="font-bold text-yellow-400">${this.currentUser.stats?.tankStats?.bestScore || 0}</div>
-                        <div class="text-gray-300">Best Score</div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div class="mt-4 p-4 bg-gray-600 rounded">
-                  <h3 class="text-lg font-semibold text-white mb-2">🏆 Achievements</h3>
-                  <div class="grid grid-cols-2 gap-4 text-sm">
-                    <div class="text-center">
-                      <div class="font-bold text-purple-400">${this.currentUser.stats?.tournamentWins || 0}</div>
-                      <div class="text-gray-300">Tournament Wins</div>
-                    </div>
-                    <div class="text-center">
-                      <div class="font-bold text-orange-400">${this.currentUser.stats?.longestWinStreak || 0}</div>
-                      <div class="text-gray-300">Longest Win Streak</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
 
             <!-- Account Information -->
             <div class="mt-6 bg-gray-700 rounded-lg p-6">
@@ -186,6 +122,27 @@ export class Profile {
     const resetBtn = document.getElementById('reset-profile')!;
     resetBtn.addEventListener('click', () => {
       this.resetForm();
+    });
+
+    // Avatar upload functionality
+    const avatarChangeBtn = document.getElementById('avatar-change-btn')!;
+    const avatarInput = document.getElementById('avatar-input') as HTMLInputElement;
+    const removeAvatarBtn = document.getElementById('remove-avatar-btn')!;
+
+    avatarChangeBtn.addEventListener('click', () => {
+      avatarInput.click();
+    });
+
+    avatarInput.addEventListener('change', (event) => {
+      const target = event.target as HTMLInputElement;
+      const file = target.files?.[0];
+      if (file) {
+        this.uploadAvatar(file);
+      }
+    });
+
+    removeAvatarBtn.addEventListener('click', () => {
+      this.removeAvatar();
     });
   }
 
@@ -230,6 +187,85 @@ export class Profile {
     (document.getElementById('displayName') as HTMLInputElement).value = this.currentUser.displayName || '';
     (document.getElementById('email') as HTMLInputElement).value = this.currentUser.email || '';
     (document.getElementById('bio') as HTMLTextAreaElement).value = this.currentUser.bio || '';
+  }
+
+  private async uploadAvatar(file: File): Promise<void> {
+    try {
+      // Validate file type
+      const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png'];
+      if (!allowedTypes.includes(file.type)) {
+        this.showMessage('Please select a JPG or PNG image.', 'error');
+        return;
+      }
+
+      // Validate file size (5MB limit)
+      const maxSize = 5 * 1024 * 1024; // 5MB
+      if (file.size > maxSize) {
+        this.showMessage('File size must be less than 5MB.', 'error');
+        return;
+      }
+
+      // Show preview immediately
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const avatarPreview = document.getElementById('avatar-preview') as HTMLImageElement;
+        if (e.target?.result) {
+          avatarPreview.src = e.target.result as string;
+        }
+      };
+      reader.readAsDataURL(file);
+
+      // Get fresh user data before upload
+      console.log('Getting current user data before upload...');
+      const currentUserData = await this.apiService.getCurrentUser();
+      this.currentUser = currentUserData;
+      localStorage.setItem('user', JSON.stringify(this.currentUser));
+
+      // Upload to server
+      console.log('Uploading avatar file:', file.name, file.type, file.size);
+      const response = await this.apiService.uploadAvatar(file);
+      console.log('Upload response:', response);
+
+      // Update current user
+      this.currentUser.avatar = `http://localhost:3001${response.avatarUrl}`;
+
+      // Update localStorage
+      localStorage.setItem('user', JSON.stringify(this.currentUser));
+
+      this.showMessage('Avatar updated successfully!', 'success');
+    } catch (error) {
+      console.error('Failed to upload avatar:', error);
+      this.showMessage(`Failed to upload avatar: ${(error as Error).message || 'Unknown error'}`, 'error');
+
+      // Revert preview on error
+      const avatarPreview = document.getElementById('avatar-preview') as HTMLImageElement;
+      avatarPreview.src = this.currentUser.avatar || 'http://localhost:3001/api/avatars/avatars/default.svg';
+    }
+  }
+
+  private async removeAvatar(): Promise<void> {
+    try {
+      // Set to default avatar
+      const defaultAvatarUrl = 'http://localhost:3001/api/avatars/avatars/default.svg';
+
+      // Update avatar on server
+      await this.apiService.updateProfile({ avatar: null });
+
+      // Update UI
+      const avatarPreview = document.getElementById('avatar-preview') as HTMLImageElement;
+      avatarPreview.src = defaultAvatarUrl;
+
+      // Update current user
+      this.currentUser.avatar = defaultAvatarUrl;
+
+      // Update localStorage
+      localStorage.setItem('user', JSON.stringify(this.currentUser));
+
+      this.showMessage('Avatar removed successfully!', 'success');
+    } catch (error) {
+      console.error('Failed to remove avatar:', error);
+      this.showMessage('Failed to remove avatar. Please try again.', 'error');
+    }
   }
 
   private showMessage(message: string, type: 'success' | 'error' | 'info'): void {

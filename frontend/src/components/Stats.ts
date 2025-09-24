@@ -82,7 +82,7 @@ export class Stats {
                   </div>
                   <div class="flex justify-between">
                     <span class="text-gray-300">Win Rate</span>
-                    <span class="text-yellow-400 font-bold">${this.userStats?.winRate ? (this.userStats.winRate * 100).toFixed(1) : 0}%</span>
+                    <span class="text-yellow-400 font-bold">${this.userStats?.winRate ? this.userStats.winRate.toFixed(1) : 0}%</span>
                   </div>
                 </div>
               </div>
@@ -101,7 +101,7 @@ export class Stats {
                   </div>
                   <div class="flex justify-between">
                     <span class="text-gray-300">Win Rate</span>
-                    <span class="text-yellow-400 font-bold">${this.userStats?.pongStats?.winRate ? (this.userStats.pongStats.winRate * 100).toFixed(1) : 0}%</span>
+                    <span class="text-yellow-400 font-bold">${this.userStats?.pongStats?.winRate ? this.userStats.pongStats.winRate.toFixed(1) : 0}%</span>
                   </div>
                   <div class="flex justify-between">
                     <span class="text-gray-300">Best Score</span>
@@ -128,7 +128,7 @@ export class Stats {
                   </div>
                   <div class="flex justify-between">
                     <span class="text-gray-300">Win Rate</span>
-                    <span class="text-yellow-400 font-bold">${this.userStats?.tankStats?.winRate ? (this.userStats.tankStats.winRate * 100).toFixed(1) : 0}%</span>
+                    <span class="text-yellow-400 font-bold">${this.userStats?.tankStats?.winRate ? this.userStats.tankStats.winRate.toFixed(1) : 0}%</span>
                   </div>
                   <div class="flex justify-between">
                     <span class="text-gray-300">Best Score</span>
@@ -212,7 +212,7 @@ export class Stats {
             <div class="text-sm text-gray-300">Losses</div>
           </div>
           <div class="bg-gray-600 p-4 rounded text-center">
-            <div class="text-2xl font-bold text-yellow-400">${(gameTypeStats.winRate * 100).toFixed(1)}%</div>
+            <div class="text-2xl font-bold text-yellow-400">${gameTypeStats.winRate.toFixed(1)}%</div>
             <div class="text-sm text-gray-300">Win Rate</div>
           </div>
         </div>
@@ -244,7 +244,7 @@ export class Stats {
           <div class="text-sm text-gray-300">Losses</div>
         </div>
         <div class="bg-gray-600 p-4 rounded text-center">
-          <div class="text-2xl font-bold text-yellow-400">${(stats.winRate * 100).toFixed(1)}%</div>
+          <div class="text-2xl font-bold text-yellow-400">${stats.winRate.toFixed(1)}%</div>
           <div class="text-sm text-gray-300">Win Rate</div>
         </div>
       </div>
@@ -277,7 +277,7 @@ export class Stats {
                 </div>
                 <div class="text-right">
                   <div class="text-white font-bold">${entry.stats.wins}W - ${entry.stats.losses}L</div>
-                  <div class="text-yellow-400 text-sm">${(entry.stats.winRate * 100).toFixed(1)}% WR</div>
+                  <div class="text-yellow-400 text-sm">${entry.stats.winRate.toFixed(1)}% WR</div>
                 </div>
               </div>
             </div>

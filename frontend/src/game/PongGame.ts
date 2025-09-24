@@ -137,17 +137,23 @@ export class PongGame {
   private setupWebSocketListeners(): void {
     this.wsService.on('gameState', (state: GameState) => {
       this.gameState = state;
-      
+
       // Create game objects on first state update
       if (!this.ball) {
         this.createGameObjects();
       }
-      
+
       this.updateGameObjects();
-      
+
       if (state.gameStatus === 'finished') {
         this.showGameEndModal(state.winner!);
       }
+    });
+
+    // Listen for game end event from backend
+    this.wsService.on('gameEnd', (data: { winner: string; winnerId: string; gameId: string; showVictoryScreen: boolean }) => {
+      console.log('Game ended:', data);
+      this.showGameEndModal(data.winner);
     });
 
     this.wsService.on('playerAssignment', (data: { playerId: string; playerNumber: number; side?: string }) => {

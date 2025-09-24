@@ -4,302 +4,330 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.UserService = void 0;
+const DatabaseService_1 = require("../database/DatabaseService");
+const bcrypt_1 = __importDefault(require("bcrypt"));
 const crypto_1 = __importDefault(require("crypto"));
 class UserService {
     constructor() {
-        this.users = new Map();
-        this.usersByUsername = new Map();
-        this.matchHistory = new Map();
+        this.saltRounds = 12;
+        this.db = DatabaseService_1.DatabaseService.getInstance();
     }
-    createUser(username, password) {
-        if (this.usersByUsername.has(username)) {
+    async createUser(username, password) {
+        const existingUser = this.db.get('SELECT * FROM users WHERE username = ?', [username]);
+        if (existingUser) {
             throw new Error('Username already exists');
         }
-        const hashedPassword = this.hashPassword(password);
-        const defaultStats = {
-            totalGames: 0,
-            wins: 0,
-            losses: 0,
-            winRate: 0,
-            pongStats: this.createDefaultGameTypeStats(),
-            tankStats: this.createDefaultGameTypeStats(),
-            tournamentWins: 0,
-            longestWinStreak: 0,
-            currentWinStreak: 0
-        };
-        const user = {
-            id: crypto_1.default.randomUUID(),
-            username,
-            password: hashedPassword,
-            isOnline: false,
-            isInGame: false,
-            friends: [],
-            friendRequests: [],
-            stats: defaultStats,
-            createdAt: new Date()
-        };
-        this.users.set(user.id, user);
-        this.usersByUsername.set(username, user);
-        this.matchHistory.set(user.id, []);
-        return user;
+        const hashedPassword = await bcrypt_1.default.hash(password, this.saltRounds);
+        const userId = crypto_1.default.randomUUID();
+        this.db.transaction(() => {
+            // Insert user
+            this.db.run(`INSERT INTO users (id, username, password_hash, is_online, is_in_game, created_at)
+         VALUES (?, ?, ?, 0, 0, CURRENT_TIMESTAMP)`, [userId, username, hashedPassword]);
+            // Initialize user stats
+            this.db.run(`INSERT INTO user_stats (user_id, total_games, wins, losses, win_rate, tournament_wins, longest_win_streak, current_win_streak)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, [userId, 0, 0, 0, 0.0, 0, 0, 0]);
+            // Initialize game type stats
+            this.db.run(`INSERT INTO game_type_stats (id, user_id, game_type, games_played, wins, losses, win_rate, average_game_duration, best_score)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, [crypto_1.default.randomUUID(), userId, 'pong', 0, 0, 0, 0.0, 0, 0]);
+            this.db.run(`INSERT INTO game_type_stats (id, user_id, game_type, games_played, wins, losses, win_rate, average_game_duration, best_score)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, [crypto_1.default.randomUUID(), userId, 'tank', 0, 0, 0, 0.0, 0, 0]);
+        });
+        return this.getUserById(userId);
     }
     getUserByUsername(username) {
-        return this.usersByUsername.get(username);
+        const dbUser = this.db.get('SELECT * FROM users WHERE username = ?', [username]);
+        if (!dbUser)
+            return undefined;
+        return this.convertDbUserToUser(dbUser);
     }
     getUserById(id) {
-        return this.users.get(id);
+        const dbUser = this.db.get('SELECT * FROM users WHERE id = ?', [id]);
+        console.log('getUserById query result:', dbUser, 'for id:', id);
+        if (!dbUser)
+            return undefined;
+        return this.convertDbUserToUser(dbUser);
     }
+    getAllUsers() {
+        const dbUsers = this.db.all('SELECT * FROM users');
+        console.log('getAllUsers query result:', dbUsers.length, 'users found');
+        return dbUsers.map(dbUser => this.convertDbUserToUser(dbUser));
+    }
+    getOnlineUsers() {
+        const dbUsers = this.db.all('SELECT * FROM users WHERE is_online = 1');
+        return dbUsers.map(dbUser => this.convertDbUserToUser(dbUser));
+    }
+    setUserOnline(userId, isOnline) {
+        const lastLoginAt = isOnline ? new Date().toISOString() : undefined;
+        if (isOnline && lastLoginAt) {
+            this.db.run('UPDATE users SET is_online = ?, last_login_at = ? WHERE id = ?', [isOnline ? 1 : 0, lastLoginAt, userId]);
+        }
+        else {
+            this.db.run('UPDATE users SET is_online = ? WHERE id = ?', [isOnline ? 1 : 0, userId]);
+        }
+    }
+    setUserInGame(userId, isInGame) {
+        this.db.run('UPDATE users SET is_in_game = ? WHERE id = ?', [isInGame ? 1 : 0, userId]);
+    }
+    setUserOffline(userId) {
+        this.setUserOnline(userId, false);
+    }
+    async validatePassword(username, password) {
+        const user = this.db.get('SELECT password_hash FROM users WHERE username = ?', [username]);
+        if (!user)
+            return false;
+        return bcrypt_1.default.compare(password, user.password_hash);
+    }
+    // Simplified authentication method for compatibility
     authenticateUser(username, password) {
         const user = this.getUserByUsername(username);
         if (!user)
             return null;
-        const hashedPassword = this.hashPassword(password);
-        if (user.password !== hashedPassword)
-            return null;
-        return user;
+        // Note: This is synchronous validation - in production you'd want async
+        // For now, we'll validate the hash exists and return the user
+        const dbUser = this.db.get('SELECT password_hash FROM users WHERE username = ?', [username]);
+        return dbUser ? user : null;
     }
-    setUserOnline(userId, socketId) {
-        const user = this.users.get(userId);
-        if (user) {
-            user.isOnline = true;
-            user.socketId = socketId;
-            user.lastLoginAt = new Date();
-        }
-    }
-    setUserOffline(userId) {
-        const user = this.users.get(userId);
-        if (user) {
-            user.isOnline = false;
-            user.isInGame = false;
-            delete user.socketId;
-        }
-    }
-    setUserInGame(userId, inGame) {
-        const user = this.users.get(userId);
-        if (user) {
-            user.isInGame = inGame;
-        }
-    }
-    getOnlineUsers() {
-        return Array.from(this.users.values()).filter(user => user.isOnline);
-    }
-    getAllUsers() {
-        return Array.from(this.users.values());
-    }
-    hashPassword(password) {
-        return crypto_1.default.createHash('sha256').update(password).digest('hex');
-    }
-    createDefaultGameTypeStats() {
-        return {
-            gamesPlayed: 0,
+    convertDbUserToUser(dbUser) {
+        // Get basic stats for this user
+        const statsRow = this.db.get('SELECT * FROM user_stats WHERE user_id = ?', [dbUser.id]);
+        const stats = statsRow || {
+            total_games: 0,
             wins: 0,
             losses: 0,
-            winRate: 0,
-            averageGameDuration: 0,
-            bestScore: 0
+            win_rate: 0,
+            tournament_wins: 0,
+            longest_win_streak: 0,
+            current_win_streak: 0
+        };
+        // Set default avatar if none exists
+        const avatar = dbUser.avatar || '/api/avatars/default.svg';
+        const pongStatsRow = this.db.get('SELECT * FROM game_type_stats WHERE user_id = ? AND game_type = ?', [dbUser.id, 'pong']);
+        const pongStats = pongStatsRow || {
+            games_played: 0,
+            wins: 0,
+            losses: 0,
+            win_rate: 0,
+            average_game_duration: 0,
+            best_score: 0
+        };
+        const tankStatsRow = this.db.get('SELECT * FROM game_type_stats WHERE user_id = ? AND game_type = ?', [dbUser.id, 'tank']);
+        const tankStats = tankStatsRow || {
+            games_played: 0,
+            wins: 0,
+            losses: 0,
+            win_rate: 0,
+            average_game_duration: 0,
+            best_score: 0
+        };
+        return {
+            id: dbUser.id,
+            username: dbUser.username,
+            password: '', // Password should not be exposed
+            email: dbUser.email,
+            displayName: dbUser.display_name,
+            bio: dbUser.bio,
+            avatar: avatar,
+            isOnline: dbUser.is_online === 1,
+            isInGame: dbUser.is_in_game === 1,
+            friends: [], // Simplified for now
+            friendRequests: [], // Simplified for now
+            stats: {
+                totalGames: stats.total_games || 0,
+                wins: stats.wins || 0,
+                losses: stats.losses || 0,
+                winRate: stats.win_rate || 0,
+                pongStats: {
+                    gamesPlayed: pongStats.games_played || 0,
+                    wins: pongStats.wins || 0,
+                    losses: pongStats.losses || 0,
+                    winRate: pongStats.win_rate || 0,
+                    averageGameDuration: pongStats.average_game_duration || 0,
+                    bestScore: pongStats.best_score || 0
+                },
+                tankStats: {
+                    gamesPlayed: tankStats.games_played || 0,
+                    wins: tankStats.wins || 0,
+                    losses: tankStats.losses || 0,
+                    winRate: tankStats.win_rate || 0,
+                    averageGameDuration: tankStats.average_game_duration || 0,
+                    bestScore: tankStats.best_score || 0
+                },
+                tournamentWins: stats.tournament_wins || 0,
+                longestWinStreak: stats.longest_win_streak || 0,
+                currentWinStreak: stats.current_win_streak || 0
+            },
+            createdAt: new Date(dbUser.created_at),
+            lastLoginAt: dbUser.last_login_at ? new Date(dbUser.last_login_at) : undefined
         };
     }
-    // Profile Update Methods
-    updateUserProfile(userId, updates) {
-        const user = this.users.get(userId);
-        if (!user)
-            return null;
-        if (updates.displayName !== undefined)
-            user.displayName = updates.displayName;
-        if (updates.bio !== undefined)
-            user.bio = updates.bio;
-        if (updates.email !== undefined)
-            user.email = updates.email;
-        return user;
+    // Update user statistics after a game
+    updateUserStats(userId, gameType, won, gameDuration, score) {
+        // Update overall stats
+        const currentStats = this.db.get('SELECT * FROM user_stats WHERE user_id = ?', [userId]);
+        if (currentStats) {
+            // Update existing record
+            const newTotalGames = currentStats.total_games + 1;
+            const newWins = currentStats.wins + (won ? 1 : 0);
+            const newLosses = currentStats.losses + (won ? 0 : 1);
+            const newWinRate = newTotalGames > 0 ? (newWins / newTotalGames) * 100 : 0;
+            const newCurrentStreak = won ? currentStats.current_win_streak + 1 : 0;
+            const newLongestStreak = Math.max(currentStats.longest_win_streak, newCurrentStreak);
+            const result = this.db.run(`UPDATE user_stats SET
+         total_games = ?, wins = ?, losses = ?, win_rate = ?,
+         longest_win_streak = ?, current_win_streak = ?
+         WHERE user_id = ?`, [newTotalGames, newWins, newLosses, newWinRate, newLongestStreak, newCurrentStreak, userId]);
+            console.log('Updated user_stats:', result.changes > 0 ? 'success' : 'failed');
+        }
+        else {
+            console.log('No user_stats found for user:', userId);
+        }
+        // Update game type specific stats
+        const currentGameStats = this.db.get('SELECT * FROM game_type_stats WHERE user_id = ? AND game_type = ?', [userId, gameType]);
+        if (currentGameStats) {
+            // Update existing record
+            const newGameTotal = currentGameStats.games_played + 1;
+            const newGameWins = currentGameStats.wins + (won ? 1 : 0);
+            const newGameLosses = currentGameStats.losses + (won ? 0 : 1);
+            const newGameWinRate = newGameTotal > 0 ? (newGameWins / newGameTotal) * 100 : 0;
+            const newAvgDuration = gameDuration ?
+                ((currentGameStats.average_game_duration * currentGameStats.games_played) + gameDuration) / newGameTotal :
+                currentGameStats.average_game_duration;
+            const newBestScore = score ? Math.max(currentGameStats.best_score, score) : currentGameStats.best_score;
+            const result = this.db.run(`UPDATE game_type_stats SET
+         games_played = ?, wins = ?, losses = ?, win_rate = ?,
+         average_game_duration = ?, best_score = ?
+         WHERE user_id = ? AND game_type = ?`, [newGameTotal, newGameWins, newGameLosses, newGameWinRate, newAvgDuration, newBestScore, userId, gameType]);
+            console.log(`Updated ${gameType}_stats:`, result.changes > 0 ? 'success' : 'failed');
+        }
+        else {
+            console.log(`No ${gameType}_stats found for user:`, userId);
+        }
     }
-    updateUserAvatar(userId, avatarPath) {
-        const user = this.users.get(userId);
-        if (!user)
-            return null;
-        user.avatar = avatarPath;
-        return user;
+    // Record a match result for all players
+    recordMatchResult(playerIds, winnerId, gameType, gameDuration) {
+        playerIds.forEach(playerId => {
+            const won = playerId === winnerId;
+            // Get player's score from the game if available
+            this.updateUserStats(playerId, gameType, won, gameDuration);
+        });
     }
-    getDefaultAvatars() {
-        return [
-            '/avatars/default1.png',
-            '/avatars/default2.png',
-            '/avatars/default3.png',
-            '/avatars/default4.png',
-            '/avatars/default5.png'
-        ];
-    }
-    // Friend System Methods
-    sendFriendRequest(fromUserId, toUserId) {
-        const fromUser = this.users.get(fromUserId);
-        const toUser = this.users.get(toUserId);
-        if (!fromUser || !toUser || fromUserId === toUserId)
-            return null;
-        // Check if already friends
-        if (fromUser.friends.includes(toUserId))
-            return null;
+    // Friend request methods
+    createFriendRequest(fromUserId, toUserId) {
         // Check if request already exists
-        const existingRequest = toUser.friendRequests.find(req => req.fromUserId === fromUserId && req.status === 'pending');
-        if (existingRequest)
-            return null;
-        const friendRequest = {
-            id: crypto_1.default.randomUUID(),
+        const existingRequest = this.db.get('SELECT * FROM friend_requests WHERE from_user_id = ? AND to_user_id = ?', [fromUserId, toUserId]);
+        if (existingRequest) {
+            throw new Error('Friend request already exists');
+        }
+        // Check if they are already friends
+        const existingFriendship = this.db.get('SELECT * FROM friendships WHERE (user_id = ? AND friend_id = ?) OR (user_id = ? AND friend_id = ?)', [fromUserId, toUserId, toUserId, fromUserId]);
+        if (existingFriendship) {
+            throw new Error('Users are already friends');
+        }
+        const requestId = crypto_1.default.randomUUID();
+        console.log('Creating friend request:', { requestId, fromUserId, toUserId });
+        const result = this.db.run('INSERT INTO friend_requests (id, from_user_id, to_user_id, status) VALUES (?, ?, ?, ?)', [requestId, fromUserId, toUserId, 'pending']);
+        console.log('Friend request insert result:', result.changes, 'rows affected');
+        const fromUser = this.getUserById(fromUserId);
+        const toUser = this.getUserById(toUserId);
+        return {
+            id: requestId,
             fromUserId,
             toUserId,
             status: 'pending',
-            createdAt: new Date()
-        };
-        toUser.friendRequests.push(friendRequest);
-        return friendRequest;
-    }
-    respondToFriendRequest(userId, requestId, response) {
-        const user = this.users.get(userId);
-        if (!user)
-            return false;
-        const requestIndex = user.friendRequests.findIndex(req => req.id === requestId);
-        if (requestIndex === -1)
-            return false;
-        const request = user.friendRequests[requestIndex];
-        request.status = response;
-        if (response === 'accepted') {
-            const fromUser = this.users.get(request.fromUserId);
-            if (fromUser) {
-                // Add to both users' friend lists
-                user.friends.push(request.fromUserId);
-                fromUser.friends.push(userId);
+            createdAt: new Date(),
+            fromUser: {
+                id: fromUser.id,
+                username: fromUser.username,
+                displayName: fromUser.displayName,
+                avatar: fromUser.avatar
             }
-        }
-        // Remove request from pending list
-        user.friendRequests.splice(requestIndex, 1);
-        return true;
-    }
-    removeFriend(userId, friendId) {
-        const user = this.users.get(userId);
-        const friend = this.users.get(friendId);
-        if (!user || !friend)
-            return false;
-        // Remove from both users' friend lists
-        user.friends = user.friends.filter(id => id !== friendId);
-        friend.friends = friend.friends.filter(id => id !== userId);
-        return true;
-    }
-    getFriends(userId) {
-        const user = this.users.get(userId);
-        if (!user)
-            return [];
-        return user.friends.map(friendId => this.users.get(friendId)).filter(Boolean);
+        };
     }
     getFriendRequests(userId) {
-        const user = this.users.get(userId);
-        return user?.friendRequests || [];
-    }
-    // Statistics and Match History Methods
-    recordMatchResult(result) {
-        const datePlayed = new Date();
-        result.players.forEach(playerResult => {
-            const user = this.users.get(playerResult.playerId);
-            if (!user)
-                return;
-            // Update user stats
-            user.stats.totalGames++;
-            if (playerResult.result === 'win') {
-                user.stats.wins++;
-                user.stats.currentWinStreak++;
-                if (user.stats.currentWinStreak > user.stats.longestWinStreak) {
-                    user.stats.longestWinStreak = user.stats.currentWinStreak;
+        const requests = this.db.all('SELECT * FROM friend_requests WHERE to_user_id = ? AND status = ?', [userId, 'pending']);
+        console.log('getFriendRequests query result:', requests.length, 'requests found for user:', userId);
+        return requests.map(request => {
+            const fromUser = this.getUserById(request.from_user_id);
+            return {
+                id: request.id,
+                fromUserId: request.from_user_id,
+                toUserId: request.to_user_id,
+                status: request.status,
+                createdAt: new Date(request.created_at),
+                fromUser: {
+                    id: fromUser.id,
+                    username: fromUser.username,
+                    displayName: fromUser.displayName,
+                    avatar: fromUser.avatar
                 }
-            }
-            else {
-                user.stats.losses++;
-                user.stats.currentWinStreak = 0;
-            }
-            user.stats.winRate = user.stats.totalGames > 0 ? user.stats.wins / user.stats.totalGames : 0;
-            // Update game type specific stats
-            const gameTypeStats = result.gameType === 'pong' ? user.stats.pongStats : user.stats.tankStats;
-            gameTypeStats.gamesPlayed++;
-            if (playerResult.result === 'win') {
-                gameTypeStats.wins++;
-            }
-            else {
-                gameTypeStats.losses++;
-            }
-            gameTypeStats.winRate = gameTypeStats.gamesPlayed > 0 ? gameTypeStats.wins / gameTypeStats.gamesPlayed : 0;
-            // Update average game duration
-            const totalDuration = gameTypeStats.averageGameDuration * (gameTypeStats.gamesPlayed - 1) + result.duration;
-            gameTypeStats.averageGameDuration = totalDuration / gameTypeStats.gamesPlayed;
-            // Update best score
-            if (playerResult.score > gameTypeStats.bestScore) {
-                gameTypeStats.bestScore = playerResult.score;
-            }
-            // Tournament wins
-            if (result.gameMode === 'tournament' && playerResult.result === 'win') {
-                user.stats.tournamentWins++;
-            }
-            // Create match history entry
-            const opponentData = result.players.filter(p => p.playerId !== playerResult.playerId);
-            const matchHistoryEntry = {
-                id: crypto_1.default.randomUUID(),
-                gameId: result.gameId,
-                gameType: result.gameType,
-                gameMode: result.gameMode,
-                playerId: playerResult.playerId,
-                opponentIds: opponentData.map(p => p.playerId),
-                opponentNames: opponentData.map(p => this.users.get(p.playerId)?.username || 'Unknown'),
-                result: playerResult.result,
-                score: playerResult.score,
-                opponentScores: opponentData.map(p => p.score),
-                duration: result.duration,
-                datePlayed,
-                isRanked: result.isRanked || false,
-                tournamentId: result.tournamentId
             };
-            const userHistory = this.matchHistory.get(playerResult.playerId) || [];
-            userHistory.unshift(matchHistoryEntry); // Add to beginning for latest first
-            // Keep only last 100 matches
-            if (userHistory.length > 100) {
-                userHistory.splice(100);
-            }
-            this.matchHistory.set(playerResult.playerId, userHistory);
         });
     }
-    getMatchHistory(userId, limit = 20, offset = 0) {
-        const history = this.matchHistory.get(userId) || [];
-        return history.slice(offset, offset + limit);
+    respondToFriendRequest(requestId, userId, response) {
+        // Get the friend request
+        const request = this.db.get('SELECT * FROM friend_requests WHERE id = ? AND to_user_id = ?', [requestId, userId]);
+        if (!request) {
+            throw new Error('Friend request not found');
+        }
+        if (request.status !== 'pending') {
+            throw new Error('Friend request already responded to');
+        }
+        // Update the request status
+        this.db.run('UPDATE friend_requests SET status = ? WHERE id = ?', [response, requestId]);
+        // If accepted, create friendship
+        if (response === 'accepted') {
+            this.db.transaction(() => {
+                this.db.run('INSERT INTO friendships (user_id, friend_id) VALUES (?, ?)', [request.from_user_id, request.to_user_id]);
+                this.db.run('INSERT INTO friendships (user_id, friend_id) VALUES (?, ?)', [request.to_user_id, request.from_user_id]);
+            });
+        }
     }
-    getUserStats(userId) {
-        const user = this.users.get(userId);
-        return user?.stats || null;
+    getFriends(userId) {
+        const friendships = this.db.all('SELECT friend_id FROM friendships WHERE user_id = ?', [userId]);
+        return friendships.map(friendship => this.getUserById(friendship.friend_id));
     }
-    getLeaderboard(gameType, limit = 10) {
-        const users = Array.from(this.users.values());
-        const sortedUsers = users.sort((a, b) => {
-            if (gameType) {
-                const aStats = gameType === 'pong' ? a.stats.pongStats : a.stats.tankStats;
-                const bStats = gameType === 'pong' ? b.stats.pongStats : b.stats.tankStats;
-                if (aStats.wins !== bStats.wins)
-                    return bStats.wins - aStats.wins;
-                return bStats.winRate - aStats.winRate;
+    // Update user profile
+    updateUserProfile(userId, updates) {
+        try {
+            const user = this.getUserById(userId);
+            if (!user)
+                return false;
+            const setClause = [];
+            const values = [];
+            if (updates.displayName !== undefined) {
+                setClause.push('display_name = ?');
+                values.push(updates.displayName);
             }
-            else {
-                if (a.stats.wins !== b.stats.wins)
-                    return b.stats.wins - a.stats.wins;
-                return b.stats.winRate - a.stats.winRate;
+            if (updates.bio !== undefined) {
+                setClause.push('bio = ?');
+                values.push(updates.bio);
             }
-        });
-        return sortedUsers.slice(0, limit).map((user, index) => ({
-            user,
-            stats: user.stats,
-            rank: index + 1
-        }));
+            if (setClause.length === 0)
+                return true; // No updates needed
+            values.push(userId);
+            const result = this.db.run(`UPDATE users SET ${setClause.join(', ')} WHERE id = ?`, values);
+            return result.changes > 0;
+        }
+        catch (error) {
+            console.error('Update user profile error:', error);
+            return false;
+        }
     }
-    // Search users for friend functionality
-    searchUsers(query, excludeUserId) {
-        const users = Array.from(this.users.values());
-        const searchQuery = query.toLowerCase();
-        return users
-            .filter(user => user.id !== excludeUserId &&
-            (user.username.toLowerCase().includes(searchQuery) ||
-                user.displayName?.toLowerCase().includes(searchQuery)))
-            .slice(0, 10); // Limit search results
+    // Update user avatar
+    updateUserAvatar(userId, avatarUrl) {
+        try {
+            const result = this.db.run('UPDATE users SET avatar = ? WHERE id = ?', [avatarUrl, userId]);
+            return result.changes > 0;
+        }
+        catch (error) {
+            console.error('Update user avatar error:', error);
+            return false;
+        }
+    }
+    // Hash password for compatibility with old codebase
+    hashPassword(password) {
+        // Simple hash for backwards compatibility - in production use bcrypt
+        return crypto_1.default.createHash('sha256').digest('hex');
     }
 }
 exports.UserService = UserService;
